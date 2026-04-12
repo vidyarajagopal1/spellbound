@@ -88,6 +88,14 @@
       <div id="essays-grid" class="essays-grid"></div>
     </div>
 
+    <!-- Wishlist View -->
+    <div id="wishlist-view" class="view hidden">
+      <div class="books-toolbar">
+        <button class="fab-inline" onclick="showAddWishlistForm()">+ Add to Wishlist</button>
+      </div>
+      <div id="wishlist-list"></div>
+    </div>
+
     <!-- Essay Detail View -->
     <div id="essay-detail-view" class="view hidden">
       <div class="essay-detail-actions no-print">
@@ -275,6 +283,29 @@
       </form>
     </div>
 
+    <!-- Add Wishlist Form -->
+    <div id="add-wishlist-form" class="form hidden">
+      <h3>Add to Wishlist</h3>
+      <form onsubmit="addWishlistItem(event)">
+        <label for="wishlist-title-input">Title</label>
+        <input type="text" id="wishlist-title-input" placeholder="Title" required>
+        <label for="wishlist-category-input">Category</label>
+        <select id="wishlist-category-input" required>
+          <option value="Fiction">Fiction</option>
+          <option value="History">History</option>
+          <option value="Politics">Politics</option>
+          <option value="Philosophy">Philosophy</option>
+          <option value="Graphic Novels">Graphic Novels</option>
+        </select>
+        <label for="wishlist-author-input">Author <span style="font-weight:normal;color:#888;">(optional)</span></label>
+        <input type="text" id="wishlist-author-input" placeholder="Author">
+        <label for="wishlist-note-input">Note <span style="font-weight:normal;color:#888;">(optional)</span></label>
+        <textarea id="wishlist-note-input" placeholder="Why you want to read it..."></textarea>
+        <button type="submit">Add</button>
+        <button type="button" onclick="hideForm()">Cancel</button>
+      </form>
+    </div>
+
   </main>
 
   <nav class="bottom-nav">
@@ -293,6 +324,10 @@
     <button id="nav-essays" class="nav-btn" onclick="showView('essays')">
       <span class="nav-icon">&#9997;</span>
       <span class="nav-label">Essays</span>
+    </button>
+    <button id="nav-wishlist" class="nav-btn" onclick="showView('wishlist')">
+      <span class="nav-icon">&#10084;</span>
+      <span class="nav-label">Wishlist</span>
     </button>
   </nav>
 

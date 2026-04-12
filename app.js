@@ -10,6 +10,7 @@ let currentEssayId = null;
 let books          = [];
 let highlights     = [];
 let essays         = [];
+let wishlist       = [];
 let gapiReady      = false;
 let gisReady       = false;
 let tokenClient;
@@ -19,12 +20,13 @@ let db;
 
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('SpellBoundDB', 1);
+    const req = indexedDB.open('SpellBoundDB', 2);
     req.onupgradeneeded = e => {
       const d = e.target.result;
       if (!d.objectStoreNames.contains('books'))      d.createObjectStore('books',      { keyPath: 'id', autoIncrement: true });
       if (!d.objectStoreNames.contains('highlights')) d.createObjectStore('highlights', { keyPath: 'id', autoIncrement: true });
       if (!d.objectStoreNames.contains('essays'))     d.createObjectStore('essays',     { keyPath: 'id', autoIncrement: true });
+      if (!d.objectStoreNames.contains('wishlist'))   d.createObjectStore('wishlist',   { keyPath: 'id', autoIncrement: true });
       if (!d.objectStoreNames.contains('meta'))       d.createObjectStore('meta',       { keyPath: 'key' });
     };
     req.onsuccess = e => { db = e.target.result; resolve(db); };
@@ -95,6 +97,7 @@ async function loadData() {
   books      = await dbGetAll('books');
   highlights = await dbGetAll('highlights');
   essays     = await dbGetAll('essays');
+  wishlist   = await dbGetAll('wishlist');
 }
 
 async function saveAndSync() {
@@ -169,9 +172,11 @@ async function syncFromDrive() {
       await dbClear('books');
       await dbClear('highlights');
       await dbClear('essays');
+      await dbClear('wishlist');
       for (const b of (data.books      || [])) await dbPut('books',      b);
       for (const h of (data.highlights || [])) await dbPut('highlights', h);
       for (const e of (data.essays     || [])) await dbPut('essays',     e);
+      for (const w of (data.wishlist   || [])) await dbPut('wishlist',   w);
       if (data.waitlistOrder) await dbSetMeta('waitlist-order', data.waitlistOrder);
       await loadData();
       refreshCurrentView();
@@ -189,7 +194,7 @@ async function syncToDrive() {
   if (!gapiReady || !gapi.client.getToken()) return;
   try {
     const waitlistOrder = await dbGetMeta('waitlist-order') || [];
-    const payload  = JSON.stringify({ books, highlights, essays, waitlistOrder });
+    const payload  = JSON.stringify({ books, highlights, essays, wishlist, waitlistOrder });
     const file     = await getDriveFileId();
     const method   = file ? 'PATCH' : 'POST';
     const fileId   = file ? `/${file.id}` : '';
@@ -241,6 +246,7 @@ function refreshCurrentView() {
   else if (id === 'essays-view')         loadEssays();
   else if (id === 'book-detail-view'   && currentBookId)  openBook(currentBookId);
   else if (id === 'essay-detail-view'  && currentEssayId) openEssay(currentEssayId);
+  else if (id === 'wishlist-view')       loadWishlist();
 }
 
 async function saveWaitlistOrder(order) {
@@ -318,6 +324,7 @@ function showView(view) {
   if (view === 'books')      loadBooks();
   if (view === 'highlights') loadHighlights();
   if (view === 'essays')     loadEssays();
+  if (view === 'wishlist')   loadWishlist();
 }
 
 // ─── HOME ─────────────────────────────────────────────────────────────────────
@@ -784,6 +791,103 @@ function initializeForms() {
       }
     });
   });
+}
+
+// ─── WISHLIST ─────────────────────────────────────────────────────────────────
+function loadWishlist() {
+  const CATEGORIES = ['Fiction', 'History', 'Politics', 'Philosophy', 'Graphic Novels'];
+  const container  = document.getElementById('wishlist-list');
+  if (wishlist.length === 0) {
+    container.innerHTML = '<p class="home-empty">Nothing on your wishlist yet.</p>';
+    return;
+  }
+  let html = '';
+  CATEGORIES.forEach(cat => {
+    const group = wishlist.filter(w => w.category === cat).sort((a, b) => a.title.localeCompare(b.title));
+    if (group.length === 0) return;
+    html += `<div class="wishlist-group">
+      <h2 class="wishlist-group-heading">
+        <span class="wishlist-cat-dot" style="background:${getCoverColor(cat)}"></span>
+        ${cat}
+      </h2>
+      ${group.map(w => `
+        <div class="wishlist-item" id="wishlist-item-${w.id}">
+          <div class="wishlist-item-main">
+            <span class="wishlist-item-title">${w.title}</span>
+            ${w.author ? `<span class="wishlist-item-author">${w.author}</span>` : ''}
+            ${w.note   ? `<span class="wishlist-item-note">${w.note}</span>`   : ''}
+          </div>
+          <div class="wishlist-item-actions">
+            <button class="wishlist-move-btn" onclick="showMoveToBooks(${w.id})">&#10142; Add to Books</button>
+            <button class="delete-btn" onclick="deleteWishlistItem(${w.id})">&#128465;</button>
+          </div>
+          <div class="wishlist-status-prompt hidden" id="wishlist-prompt-${w.id}">
+            <span class="wishlist-prompt-label">Add as:</span>
+            <button class="wishlist-status-btn" onclick="moveToBooks(${w.id}, 'Waitlisted')">Waitlisted</button>
+            <button class="wishlist-status-btn" onclick="moveToBooks(${w.id}, 'Reading')">Reading</button>
+            <button class="wishlist-cancel-btn" onclick="hideMoveToBooks(${w.id})">Cancel</button>
+          </div>
+        </div>`).join('')}
+    </div>`;
+  });
+  container.innerHTML = html;
+}
+
+function showMoveToBooks(id) {
+  document.querySelectorAll('.wishlist-status-prompt').forEach(el => el.classList.add('hidden'));
+  document.getElementById(`wishlist-prompt-${id}`).classList.remove('hidden');
+}
+
+function hideMoveToBooks(id) {
+  document.getElementById(`wishlist-prompt-${id}`).classList.add('hidden');
+}
+
+async function moveToBooks(wishlistId, status) {
+  const item = wishlist.find(w => w.id === wishlistId);
+  if (!item) return;
+  const book = {
+    id:       nextId(books),
+    title:    item.title,
+    category: item.category,
+    status,
+    notes:              '',
+    aftertaste:         '',
+    favouriteCharacter: item.author ? '' : '',
+    dateCompleted:      '',
+    medium:             '',
+  };
+  await dbPut('books', book);
+  await dbDelete('wishlist', wishlistId);
+  await saveAndSync();
+  loadWishlist();
+}
+
+async function deleteWishlistItem(id) {
+  if (!confirm('Remove from wishlist?')) return;
+  await dbDelete('wishlist', id);
+  await saveAndSync();
+  loadWishlist();
+}
+
+function showAddWishlistForm() {
+  document.getElementById('add-wishlist-form').classList.remove('hidden');
+  document.getElementById('add-wishlist-form').style.display = 'flex';
+}
+
+async function addWishlistItem(event) {
+  event.preventDefault();
+  const item = {
+    id:       nextId(wishlist),
+    title:    document.getElementById('wishlist-title-input').value,
+    category: document.getElementById('wishlist-category-input').value,
+    author:   document.getElementById('wishlist-author-input').value,
+    note:     document.getElementById('wishlist-note-input').value,
+  };
+  await dbPut('wishlist', item);
+  hideForm();
+  ['wishlist-title-input', 'wishlist-author-input', 'wishlist-note-input'].forEach(id => document.getElementById(id).value = '');
+  await saveAndSync();
+  loadWishlist();
 }
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────

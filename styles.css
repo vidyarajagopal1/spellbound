@@ -576,3 +576,84 @@ main { min-height: 100%; }
   .essay-body { font-size: 11pt; line-height: 1.6; }
 }
 
+/* ─── WISHLIST ───────────────────────────────────────────────────────────────── */
+.wishlist-group { margin-bottom: 1.5rem; }
+.wishlist-group-heading {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wishlist-cat-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.wishlist-item {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 8px;
+}
+.wishlist-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 10px;
+}
+.wishlist-item-title  { font-size: 0.95rem; font-weight: 600; }
+.wishlist-item-author { font-size: 0.78rem; color: var(--text-muted); }
+.wishlist-item-note   { font-size: 0.78rem; color: var(--text-muted); font-style: italic; margin-top: 2px; }
+.wishlist-item-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.wishlist-move-btn {
+  background: rgba(245,166,35,0.15);
+  color: var(--accent2);
+  border: 1px solid rgba(245,166,35,0.3);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  flex: 1;
+  transition: background 0.15s;
+}
+.wishlist-move-btn:active { background: rgba(245,166,35,0.3); }
+.wishlist-status-prompt {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.wishlist-prompt-label { font-size: 0.75rem; color: var(--text-muted); }
+.wishlist-status-btn {
+  background: var(--surface2);
+  color: var(--text);
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.wishlist-status-btn:active { background: var(--accent); color: #fff; }
+.wishlist-cancel-btn {
+  background: none;
+  color: var(--text-muted);
+  border: none;
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 8px 4px;
+}
+
