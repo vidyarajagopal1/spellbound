@@ -772,6 +772,18 @@ function initializeForms() {
     f.classList.add('hidden');
     f.style.display = 'none';
   });
+  document.querySelectorAll('.medium-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const group   = btn.closest('.medium-btn-group');
+      const current = group.querySelector('.medium-btn.active');
+      if (current === btn) {
+        btn.classList.remove('active');
+      } else {
+        if (current) current.classList.remove('active');
+        btn.classList.add('active');
+      }
+    });
+  });
 }
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
