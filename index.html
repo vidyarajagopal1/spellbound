@@ -206,14 +206,16 @@
       <h3>Add Highlight</h3>
       <form onsubmit="addHighlight(event)">
         <div id="book-choice-section" style="display: none;">
-          <label for="book-choice-existing">
-            <input type="radio" id="book-choice-existing" name="bookChoice" value="existing" checked onchange="toggleBookChoice()">
-            Select existing book
-          </label>
-          <label for="book-choice-new">
-            <input type="radio" id="book-choice-new" name="bookChoice" value="new" onchange="toggleBookChoice()">
-            Add new book
-          </label>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" id="book-choice-existing" name="bookChoice" value="existing" checked onchange="toggleBookChoice()">
+              <span>Select existing book</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" id="book-choice-new" name="bookChoice" value="new" onchange="toggleBookChoice()">
+              <span>Add new book</span>
+            </label>
+          </div>
           <div id="existing-book-section">
             <label for="highlight-book-select">Book</label>
             <select id="highlight-book-select"></select>
