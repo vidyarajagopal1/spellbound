@@ -77,6 +77,8 @@
             <option value="Graphic Novels">Graphic Novels</option>
           </select>
           <button class="fab-inline" onclick="showAddHighlightForm()">+ Add</button>
+          <button class="kindle-import-btn" onclick="importKindleClippings()">&#128241; Import Kindle</button>
+          <input type="file" id="kindle-file-input" accept=".txt" style="display:none" onchange="handleKindleFile(event)">
         </div>
       </div>
       <div id="all-highlights"></div>

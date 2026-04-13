@@ -582,6 +582,7 @@ function loadHighlights() {
       <p class="hl-quote-source">&mdash; ${book ? book.title : 'Unknown'}${book ? ` <span class="hl-quote-category">${book.category}</span>` : ''}</p>
       ${h.whyItStayed ? `<p class="hl-quote-why">${h.whyItStayed}</p>` : ''}
       ${h.date ? `<p class="hl-quote-date">${formatDate(h.date)}</p>` : ''}
+      ${h.location || h.kindleDate ? `<p class="hl-kindle-meta">${[h.location, h.kindleDate].filter(Boolean).join(' &middot; ')}</p>` : ''}
       <button onclick="handleDeleteHighlight(${h.id}, event)" class="delete-btn hl-delete" title="Delete">&#128465;</button>
     </div>`;
   }).join('');
@@ -888,6 +889,102 @@ async function addWishlistItem(event) {
   ['wishlist-title-input', 'wishlist-author-input', 'wishlist-note-input'].forEach(id => document.getElementById(id).value = '');
   await saveAndSync();
   loadWishlist();
+}
+
+// ─── KINDLE IMPORT ──────────────────────────────────────────────────────────
+function importKindleClippings() {
+  document.getElementById('kindle-file-input').click();
+}
+
+function handleKindleFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => processKindleImport(parseKindleClippings(e.target.result));
+  reader.readAsText(file, 'UTF-8');
+  // Reset so the same file can be re-selected
+  event.target.value = '';
+}
+
+function parseKindleClippings(text) {
+  const blocks = text.split('==========');
+  const clippings = [];
+  for (const block of blocks) {
+    const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length < 3) continue;
+    // Line 0: "Title (Author)" — strip author in parens at end
+    const titleRaw  = lines[0].replace(/\(([^)]+)\)\s*$/, '').trim();
+    // Line 1: "- Your Highlight on page X | Location Y | Added on ..."
+    const metaLine  = lines[1];
+    // Extract location
+    const locMatch  = metaLine.match(/[Ll]ocation\s+([\d–\-]+)/) ||
+                      metaLine.match(/[Pp]age\s+(\d+)/);
+    const location  = locMatch ? locMatch[0] : '';
+    // Extract date
+    const dateMatch = metaLine.match(/Added on (.+)$/);
+    const kindleDate = dateMatch ? dateMatch[1].trim() : '';
+    // Remaining lines = highlight text
+    const highlightText = lines.slice(2).join(' ').trim();
+    if (!highlightText || !titleRaw) continue;
+    // Skip bookmarks / notes metadata
+    if (metaLine.toLowerCase().includes('your note') ||
+        metaLine.toLowerCase().includes('your bookmark')) continue;
+    clippings.push({ title: titleRaw, location, kindleDate, text: highlightText });
+  }
+  return clippings;
+}
+
+async function processKindleImport(clippings) {
+  if (clippings.length === 0) {
+    alert('No highlights found in this file.');
+    return;
+  }
+  // Duplicate detection — exact text match
+  const existingTexts = new Set(highlights.map(h => h.text.trim()));
+  const dupCount = clippings.filter(c => existingTexts.has(c.text.trim())).length;
+  if (dupCount > 0) {
+    const ok = confirm(
+      `${dupCount} of these highlight${dupCount > 1 ? 's' : ''} already exist in SpellBound.\n` +
+      `Import everything anyway? Duplicates will be added as separate entries.`
+    );
+    if (!ok) return;
+  }
+  // Build a mutable local copy of books so newly created books are visible
+  // within the same import run
+  const localBooks = [...books];
+  const newBooks   = [];
+  const newHighlights = [];
+  for (const c of clippings) {
+    // Case-insensitive book match
+    let book = localBooks.find(b => b.title.toLowerCase() === c.title.toLowerCase());
+    if (!book) {
+      book = {
+        id:       nextId([...localBooks, ...newBooks]),
+        title:    c.title,
+        status:   'read',
+        category: 'Non-Fiction',
+      };
+      newBooks.push(book);
+      localBooks.push(book);
+    }
+    newHighlights.push({
+      id:          nextId([...highlights, ...newHighlights]),
+      text:        c.text,
+      bookId:      book.id,
+      whyItStayed: '',
+      date:        '',
+      location:    c.location,
+      kindleDate:  c.kindleDate,
+    });
+  }
+  // Persist new books first
+  for (const b of newBooks)  await dbPut('books', b);
+  for (const h of newHighlights) await dbPut('highlights', h);
+  await saveAndSync();
+  await loadData();
+  loadHighlights();
+  alert(`Imported ${newHighlights.length} highlight${newHighlights.length > 1 ? 's' : ''}` +
+        (newBooks.length ? ` and created ${newBooks.length} new book${newBooks.length > 1 ? 's' : ''}.` : '.'));
 }
 
 // ─── VOICE INPUT ─────────────────────────────────────────────────────────────

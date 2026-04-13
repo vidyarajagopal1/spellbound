@@ -198,6 +198,24 @@ main { min-height: 100%; }
   white-space: nowrap;
 }
 .fab-inline:active { opacity: 0.85; }
+.kindle-import-btn {
+  background: var(--surface2);
+  color: var(--text-muted);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.kindle-import-btn:active { background: var(--surface3, var(--surface2)); color: var(--text); }
+.hl-kindle-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+  opacity: 0.75;
+}
 
 /* ─── BOOKS GROUPS ──────────────────────────────────────────────────────────── */
 .books-group { margin-bottom: 1.5rem; }
