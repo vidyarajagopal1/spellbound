@@ -348,6 +348,7 @@ async function loadHome() {
               <p class="book-cover-category">${b.category}</p>
             </div>
             ${getMediumIcon(b.medium) ? `<span class="book-cover-medium">${getMediumIcon(b.medium)}</span>` : ''}
+            ${b.rating && RATING_LABELS[b.rating] ? `<span class="book-cover-rating">${RATING_LABELS[b.rating].icon}</span>` : ''}
           </div>`).join('')}</div>`);
 
   document.getElementById('recent-highlights').innerHTML =
@@ -415,6 +416,7 @@ function loadBooks() {
                 <p class="book-cover-category">${b.category}</p>
               </div>
               ${getMediumIcon(b.medium) ? `<span class="book-cover-medium">${getMediumIcon(b.medium)}</span>` : ''}
+              ${b.rating && RATING_LABELS[b.rating] ? `<span class="book-cover-rating">${RATING_LABELS[b.rating].icon}</span>` : ''}
               <button onclick="handleDeleteBook(${b.id}, event)" class="delete-btn book-cover-delete" title="Delete">&#128465;</button>
             </div>`).join('')}
         </div>
@@ -438,6 +440,7 @@ function openBook(id) {
             <span class="book-pill book-status-${book.status.replace(' ','-').toLowerCase()}">${book.status}</span>
             <span class="book-pill book-pill-category">${book.category}</span>
             ${getMediumIcon(book.medium) ? `<span class="book-pill book-pill-medium">${getMediumIcon(book.medium)} ${book.medium.charAt(0).toUpperCase() + book.medium.slice(1)}</span>` : ''}
+            ${book.rating && RATING_LABELS[book.rating] ? `<span class="book-pill book-pill-rating">${RATING_LABELS[book.rating].icon} ${RATING_LABELS[book.rating].label}</span>` : ''}
           </div>
         </div>
         <div class="book-detail-icon-btns">
@@ -611,7 +614,8 @@ async function addBook(event) {
     author:             document.getElementById('book-author-input').value,
     status:             document.getElementById('book-status-input').value,
     category:           document.getElementById('book-category-input').value,
-    medium:             document.querySelector('#add-book-medium-group .medium-btn.active')?.dataset.value || '',
+    rating:             document.querySelector('#add-book-rating-group .rating-btn.active')?.dataset.value || '',
+    medium:             document.querySelector('#add-book-medium-group .medium-btn.active')?.dataset.value || '',,
     dateCompleted:      document.getElementById('book-date-completed-input').value,
     notes:              document.getElementById('book-notes-input').value,
     aftertaste:         document.getElementById('book-aftertaste-input').value,
@@ -625,6 +629,7 @@ async function addBook(event) {
   document.getElementById('add-book-completion-fields').style.display = 'none';
   document.getElementById('add-book-fav-char-field').style.display    = 'none';
   setMediumBtn('#add-book-medium-group', '');
+  setRatingBtn('#add-book-rating-group', '');
   await saveAndSync();
   loadBooks();
 }
@@ -643,6 +648,7 @@ function showEditBookForm() {
   document.getElementById('edit-book-fav-char').value       = book.favouriteCharacter || '';
   document.getElementById('edit-book-date-completed').value = book.dateCompleted || '';
   setMediumBtn('#edit-book-medium-group', book.medium || '');
+  setRatingBtn('#edit-book-rating-group', book.rating || '');
   toggleCompletionFields();
   document.getElementById('edit-book-form').classList.remove('hidden');
   document.getElementById('edit-book-form').style.display = 'flex';
@@ -664,6 +670,7 @@ async function updateBook(event) {
     author:             document.getElementById('edit-book-author').value,
     status:             document.getElementById('edit-book-status').value,
     category:           document.getElementById('edit-book-category').value,
+    rating:             document.querySelector('#edit-book-rating-group .rating-btn.active')?.dataset.value || '',
     medium:             document.querySelector('#edit-book-medium-group .medium-btn.active')?.dataset.value || '',
     notes:              document.getElementById('edit-book-notes').value,
     aftertaste:         document.getElementById('edit-book-aftertaste').value,
@@ -886,6 +893,18 @@ function setMediumBtn(groupSelector, value) {
   });
 }
 
+const RATING_LABELS = {
+  forgot:   { icon: '\u{1F636}', label: 'Already forgot the plot' },
+  rentfree: { icon: '\u{1F9E0}', label: 'Rent-free in my head' },
+  wrecked:  { icon: '\u{1F525}', label: 'Wrecked me (in a good way)' },
+};
+
+function setRatingBtn(groupSelector, value) {
+  document.querySelectorAll(`${groupSelector} .rating-btn`).forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.value === value);
+  });
+}
+
 function toggleMediumBtn(btn) {
   const group   = btn.closest('.medium-btn-group');
   const current = group.querySelector('.medium-btn.active');
@@ -913,6 +932,18 @@ function initializeForms() {
     btn.addEventListener('click', () => {
       const group   = btn.closest('.medium-btn-group');
       const current = group.querySelector('.medium-btn.active');
+      if (current === btn) {
+        btn.classList.remove('active');
+      } else {
+        if (current) current.classList.remove('active');
+        btn.classList.add('active');
+      }
+    });
+  });
+  document.querySelectorAll('.rating-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const group   = btn.closest('.rating-btn-group');
+      const current = group.querySelector('.rating-btn.active');
       if (current === btn) {
         btn.classList.remove('active');
       } else {
