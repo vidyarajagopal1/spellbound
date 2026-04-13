@@ -77,8 +77,8 @@
             <option value="Graphic Novels">Graphic Novels</option>
           </select>
           <button class="fab-inline" onclick="showAddHighlightForm()">+ Add</button>
-          <button class="kindle-import-btn" onclick="importKindleClippings()">&#128241; Import Kindle</button>
-          <input type="file" id="kindle-file-input" accept=".txt" style="display:none" onchange="handleKindleFile(event)">
+          <button class="kindle-import-btn" onclick="importKindleClippings()">&#128218; Import Highlights</button>
+          <input type="file" id="kindle-file-input" accept=".json" style="display:none" onchange="handleKindleFile(event)">
         </div>
       </div>
       <div id="all-highlights"></div>
@@ -315,6 +315,19 @@
     </div>
 
   </main>
+
+  <!-- Category Modal for new books during import -->
+  <div id="category-modal-overlay" class="modal-overlay hidden">
+    <div class="modal-box">
+      <h3 class="modal-title">Assign Categories</h3>
+      <p class="modal-subtitle">These books are new to SpellBound. Choose a category for each:</p>
+      <div id="category-modal-books"></div>
+      <div class="modal-actions">
+        <button class="modal-confirm-btn" onclick="confirmCategoryModal()">Import</button>
+        <button class="modal-cancel-btn" onclick="closeCategoryModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <nav class="bottom-nav">
     <button id="nav-home" class="nav-btn active" onclick="showView('home')">

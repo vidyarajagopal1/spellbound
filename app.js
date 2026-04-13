@@ -902,7 +902,7 @@ async function addWishlistItem(event) {
   loadWishlist();
 }
 
-// ─── KINDLE IMPORT ──────────────────────────────────────────────────────────
+// ─── BOOKCISION IMPORT ───────────────────────────────────────────────────────
 function importKindleClippings() {
   document.getElementById('kindle-file-input').click();
 }
@@ -911,45 +911,40 @@ function handleKindleFile(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => processKindleImport(parseKindleClippings(e.target.result));
+  reader.onload = e => {
+    let json;
+    try { json = JSON.parse(e.target.result); }
+    catch { alert('Could not read file. Make sure it is a valid Bookcision JSON export.'); return; }
+    processKindleImport(parseBookcisionJSON(json));
+  };
   reader.readAsText(file, 'UTF-8');
-  // Reset so the same file can be re-selected
   event.target.value = '';
 }
 
-function parseKindleClippings(text) {
-  const blocks = text.split('==========');
+function parseBookcisionJSON(json) {
+  const title  = (json.title  || '').trim();
+  const author = (json.authors || '').trim();
   const clippings = [];
-  for (const block of blocks) {
-    const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    if (lines.length < 3) continue;
-    // Line 0: "Title (Author)" — strip author in parens at end
-    const titleRaw  = lines[0].replace(/\(([^)]+)\)\s*$/, '').trim();
-    // Line 1: "- Your Highlight on page X | Location Y | Added on ..."
-    const metaLine  = lines[1];
-    // Extract location
-    const locMatch  = metaLine.match(/[Ll]ocation\s+([\d–\-]+)/) ||
-                      metaLine.match(/[Pp]age\s+(\d+)/);
-    const location  = locMatch ? locMatch[0] : '';
-    // Extract date
-    const dateMatch = metaLine.match(/Added on (.+)$/);
-    const kindleDate = dateMatch ? dateMatch[1].trim() : '';
-    // Remaining lines = highlight text
-    const highlightText = lines.slice(2).join(' ').trim();
-    if (!highlightText || !titleRaw) continue;
-    // Skip bookmarks / notes metadata
-    if (metaLine.toLowerCase().includes('your note') ||
-        metaLine.toLowerCase().includes('your bookmark')) continue;
-    clippings.push({ title: titleRaw, location, kindleDate, text: highlightText });
+  for (const h of (json.highlights || [])) {
+    if (h.isNoteOnly) continue;
+    const text = (h.text || '').trim();
+    if (!text) continue;
+    const location = h.location && h.location.value ? `Location ${h.location.value}` : '';
+    const note     = (h.note || '').trim();
+    clippings.push({ title, author, location, kindleDate: '', text, whyItStayed: note });
   }
   return clippings;
 }
+
+// Holds pending import state while the category modal is open
+let _pendingImport = null;
 
 async function processKindleImport(clippings) {
   if (clippings.length === 0) {
     alert('No highlights found in this file.');
     return;
   }
+
   // Duplicate detection — exact text match
   const existingTexts = new Set(highlights.map(h => h.text.trim()));
   const dupCount = clippings.filter(c => existingTexts.has(c.text.trim())).length;
@@ -960,42 +955,101 @@ async function processKindleImport(clippings) {
     );
     if (!ok) return;
   }
-  // Build a mutable local copy of books so newly created books are visible
-  // within the same import run
-  const localBooks = [...books];
-  const newBooks   = [];
-  const newHighlights = [];
+
+  // Find which titles are new (not in books store)
+  const localBooks  = [...books];
+  const seenTitles  = new Map(); // lowercase title → stub book object
+  const newBookStubs = [];
+
   for (const c of clippings) {
-    // Case-insensitive book match
-    let book = localBooks.find(b => b.title.toLowerCase() === c.title.toLowerCase());
-    if (!book) {
-      book = {
-        id:       nextId([...localBooks, ...newBooks]),
-        title:    c.title,
-        status:   'read',
-        category: 'Non-Fiction',
-      };
-      newBooks.push(book);
-      localBooks.push(book);
-    }
+    const key = c.title.toLowerCase();
+    if (localBooks.find(b => b.title.toLowerCase() === key)) continue;
+    if (seenTitles.has(key)) continue;
+    const stub = { title: c.title, author: c.author, id: null, category: '' };
+    seenTitles.set(key, stub);
+    newBookStubs.push(stub);
+  }
+
+  if (newBookStubs.length > 0) {
+    // Show category modal — import continues in confirmCategoryModal()
+    _pendingImport = { clippings, newBookStubs };
+    showCategoryModal(newBookStubs);
+  } else {
+    await finishImport(clippings, []);
+  }
+}
+
+function showCategoryModal(stubs) {
+  const CATEGORIES = ['Fiction', 'History', 'Politics', 'Philosophy', 'Non-Fiction', 'Graphic Novels'];
+  document.getElementById('category-modal-books').innerHTML = stubs.map((s, i) =>
+    `<div class="modal-book-row">
+      <div class="modal-book-title">${s.title}</div>
+      ${s.author ? `<div class="modal-book-author">${s.author}</div>` : ''}
+      <select class="modal-category-select" data-index="${i}">
+        ${CATEGORIES.map(c => `<option value="${c}"${c === 'Non-Fiction' ? ' selected' : ''}>${c}</option>`).join('')}
+      </select>
+    </div>`
+  ).join('');
+  document.getElementById('category-modal-overlay').classList.remove('hidden');
+}
+
+function closeCategoryModal() {
+  document.getElementById('category-modal-overlay').classList.add('hidden');
+  _pendingImport = null;
+}
+
+async function confirmCategoryModal() {
+  if (!_pendingImport) return;
+  // Read chosen categories back into stubs
+  document.querySelectorAll('.modal-category-select').forEach(sel => {
+    _pendingImport.newBookStubs[parseInt(sel.dataset.index)].category = sel.value;
+  });
+  document.getElementById('category-modal-overlay').classList.add('hidden');
+  await finishImport(_pendingImport.clippings, _pendingImport.newBookStubs);
+  _pendingImport = null;
+}
+
+async function finishImport(clippings, newBookStubs) {
+  const localBooks    = [...books];
+  const createdBooks  = [];
+  const newHighlights = [];
+
+  // Materialise stub books with real IDs
+  for (const stub of newBookStubs) {
+    const book = {
+      id:       nextId([...localBooks, ...createdBooks]),
+      title:    stub.title,
+      author:   stub.author,
+      status:   'Reading',
+      category: stub.category,
+    };
+    createdBooks.push(book);
+    localBooks.push(book);
+  }
+
+  for (const c of clippings) {
+    const book = localBooks.find(b => b.title.toLowerCase() === c.title.toLowerCase());
+    if (!book) continue;
     newHighlights.push({
       id:          nextId([...highlights, ...newHighlights]),
       text:        c.text,
       bookId:      book.id,
-      whyItStayed: '',
+      whyItStayed: c.whyItStayed || '',
       date:        '',
       location:    c.location,
       kindleDate:  c.kindleDate,
     });
   }
-  // Persist new books first
-  for (const b of newBooks)  await dbPut('books', b);
-  for (const h of newHighlights) await dbPut('highlights', h);
+
+  for (const b of createdBooks)   await dbPut('books',      b);
+  for (const h of newHighlights)  await dbPut('highlights', h);
   await saveAndSync();
   await loadData();
   loadHighlights();
-  alert(`Imported ${newHighlights.length} highlight${newHighlights.length > 1 ? 's' : ''}` +
-        (newBooks.length ? ` and created ${newBooks.length} new book${newBooks.length > 1 ? 's' : ''}.` : '.'));
+  alert(
+    `Imported ${newHighlights.length} highlight${newHighlights.length !== 1 ? 's' : ''}` +
+    (createdBooks.length ? ` and created ${createdBooks.length} new book${createdBooks.length !== 1 ? 's' : ''}.` : '.')
+  );
 }
 
 // ─── VOICE INPUT ─────────────────────────────────────────────────────────────

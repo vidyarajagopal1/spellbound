@@ -750,3 +750,70 @@ main { min-height: 100%; }
   to   { opacity: 0.5; transform: scale(1.25); }
 }
 
+/* ─── CATEGORY MODAL ─────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-overlay.hidden { display: none; }
+.modal-box {
+  background: var(--surface2);
+  border-radius: 16px;
+  padding: 24px 20px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.modal-title { font-size: 1rem; font-weight: 700; margin: 0; }
+.modal-subtitle { font-size: 0.8rem; color: var(--text-muted); margin: 0; }
+.modal-book-row {
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.modal-book-title  { font-size: 0.88rem; font-weight: 600; }
+.modal-book-author { font-size: 0.78rem; color: var(--text-muted); font-style: italic; }
+.modal-category-select {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  width: 100%;
+}
+.modal-actions { display: flex; gap: 10px; margin-top: 4px; }
+.modal-confirm-btn {
+  flex: 1;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.modal-cancel-btn {
+  background: none;
+  color: var(--text-muted);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
