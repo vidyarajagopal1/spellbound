@@ -121,6 +121,8 @@
       <form onsubmit="addBook(event)">
         <label for="book-title-input">Title</label>
         <input type="text" id="book-title-input" placeholder="Title" required>
+        <label for="book-author-input">Author <span style="font-weight:normal;color:#888;">(optional)</span></label>
+        <input type="text" id="book-author-input" placeholder="Author">
         <label for="book-status-input">Status</label>
         <select id="book-status-input" required onchange="toggleAddBookFields()">
           <option value="Reading">Reading</option>
@@ -164,6 +166,8 @@
       <form onsubmit="updateBook(event)">
         <label for="edit-book-title">Title</label>
         <input type="text" id="edit-book-title" required>
+        <label for="edit-book-author">Author <span style="font-weight:normal;color:#888;">(optional)</span></label>
+        <input type="text" id="edit-book-author" placeholder="Author">
         <label for="edit-book-status">Status</label>
         <select id="edit-book-status" required onchange="toggleCompletionFields()">
           <option value="Reading">Reading</option>

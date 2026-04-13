@@ -381,7 +381,11 @@ async function loadHome() {
       `<div class="home-waitlist-item" data-id="${b.id}">
         <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
         <div class="home-waitlist-spine" style="background-color:${getCoverColor(b.category)}"></div>
-        <span class="home-waitlist-title" onclick="openBook(${b.id})">${b.title}</span>
+        <div class="home-waitlist-info" onclick="openBook(${b.id})">
+          <span class="home-waitlist-title">${b.title}</span>
+          ${b.author ? `<span class="home-waitlist-author">${b.author}</span>` : ''}
+          <span class="home-waitlist-category">${b.category}</span>
+        </div>
       </div>`).join('');
     waitlistContainer.appendChild(listEl);
     makeDraggableList(listEl, saveWaitlistOrder);
@@ -429,6 +433,7 @@ function openBook(id) {
       <div class="book-detail-header-top">
         <div>
           <h2 class="book-detail-title">${book.title}</h2>
+          ${book.author ? `<p class="book-detail-author">${book.author}</p>` : ''}
           <div class="book-detail-pills">
             <span class="book-pill book-status-${book.status.replace(' ','-').toLowerCase()}">${book.status}</span>
             <span class="book-pill book-pill-category">${book.category}</span>
@@ -486,6 +491,7 @@ async function addBook(event) {
   const book = {
     id:                 nextId(books),
     title:              document.getElementById('book-title-input').value,
+    author:             document.getElementById('book-author-input').value,
     status:             document.getElementById('book-status-input').value,
     category:           document.getElementById('book-category-input').value,
     medium:             document.querySelector('#add-book-medium-group .medium-btn.active')?.dataset.value || '',
@@ -496,7 +502,7 @@ async function addBook(event) {
   };
   await dbPut('books', book);
   hideForm();
-  ['book-title-input','book-notes-input','book-aftertaste-input','book-fav-char-input','book-date-completed-input'].forEach(id => document.getElementById(id).value = '');
+  ['book-title-input','book-author-input','book-notes-input','book-aftertaste-input','book-fav-char-input','book-date-completed-input'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('book-status-input').value   = 'Reading';
   document.getElementById('book-category-input').value = 'Fiction';
   document.getElementById('add-book-completion-fields').style.display = 'none';
@@ -511,6 +517,7 @@ function showEditBookForm() {
   const book = books.find(b => b.id === currentBookId);
   if (!book) return;
   document.getElementById('edit-book-title').value          = book.title;
+  document.getElementById('edit-book-author').value         = book.author || '';
   document.getElementById('edit-book-status').value         = book.status;
   document.getElementById('edit-book-category').value       = book.category;
   document.getElementById('edit-book-notes').value          = book.notes || '';
@@ -536,6 +543,7 @@ async function updateBook(event) {
   const book = {
     id:                 currentBookId,
     title:              document.getElementById('edit-book-title').value,
+    author:             document.getElementById('edit-book-author').value,
     status:             document.getElementById('edit-book-status').value,
     category:           document.getElementById('edit-book-category').value,
     medium:             document.querySelector('#edit-book-medium-group .medium-btn.active')?.dataset.value || '',

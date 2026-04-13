@@ -264,7 +264,8 @@ main { min-height: 100%; }
   align-items: flex-start;
   gap: 1rem;
 }
-.book-detail-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; }
+.book-detail-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 4px; }
+.book-detail-author { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
 .book-detail-pills { display: flex; gap: 6px; flex-wrap: wrap; }
 .book-pill {
   font-size: 0.65rem;
@@ -375,9 +376,12 @@ main { min-height: 100%; }
   transition: opacity 0.15s;
 }
 .home-waitlist-item.dragging { opacity: 0.35; }
-.home-waitlist-spine { width: 6px; height: 32px; border-radius: 3px; flex-shrink: 0; }
-.home-waitlist-title { font-size: 0.85rem; flex: 1; cursor: pointer; }
-.home-waitlist-title:active { color: var(--accent2); }
+.home-waitlist-spine { width: 6px; height: 38px; border-radius: 3px; flex-shrink: 0; align-self: stretch; }
+.home-waitlist-info { display: flex; flex-direction: column; gap: 2px; flex: 1; cursor: pointer; min-width: 0; }
+.home-waitlist-title { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-waitlist-author { font-size: 0.75rem; color: var(--text-muted); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-waitlist-category { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.home-waitlist-info:active .home-waitlist-title { color: var(--accent2); }
 .drag-handle {
   color: var(--text-muted);
   cursor: grab;
