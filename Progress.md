@@ -121,6 +121,24 @@ SpellBound is a personal reading memory PWA. Pure static frontend (HTML/CSS/JS),
 - New `challenges` store in IndexedDB (`{ id, name, target, startDate, endDate }`), included in Drive sync
 - IndexedDB bumped to v3
 
+### Home Page UI Improvements
+- **Hero strip** — gradient banner at the top of Home with time-aware greeting (*Good morning / afternoon / evening*) and a dry-wit message based on reading count:
+  - 0 books → *"Books don't read themselves. Allegedly."*
+  - 1 book → *"Just the one. Suspicious."*
+  - 2+ books → *"Juggling N books. Very on-brand."*
+- **Section cards** — Currently Reading, Dog-eared, and Waitlisted sections each wrapped in a subtle bordered panel (`1px solid rgba(white, 7%)`) to visually separate them
+- **Section spacing** — gap between Dog-eared and Waitlisted increased from `0` to `1.25rem`; spacing below Currently Reading from `0.5rem` to `1.25rem`
+- **Section title top margin** reset to `0` inside panels (panel padding provides breathing room)
+
+### Books Tab UI Improvements
+- **Status pill tabs** — horizontal scrollable pill row (All · Reading · Waitlisted · Paused · Completed) replaces the status dropdown as the primary filter UI; hidden `#books-status-filter` select kept in DOM for `loadBooks()` compatibility; `setStatusFilter()` wires pills to select and handles active state
+- **Category dropdown** moved to a second toolbar row alongside the Add Book button
+- **Group heading accents** — each status group heading gets a left-border in its status colour:
+  - Reading → green (`#4caf50`)
+  - Waitlisted → purple (`#9c6fda`)
+  - Paused → amber (`#f5a623`)
+  - Completed → blue (`#6ea8fe`)
+
 ---
 
 ## Service Worker Version History

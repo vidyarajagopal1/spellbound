@@ -348,6 +348,15 @@ async function loadHome() {
   const readingBooks    = books.filter(b => b.status === 'Reading');
   const waitlistedBooks = books.filter(b => b.status === 'Waitlisted');
 
+  const hour     = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const n        = readingBooks.length;
+  const heroMsg  = n === 0 ? 'Books don\'t read themselves. Allegedly.'
+                 : n === 1 ? 'Just the one. Suspicious.'
+                 :           `Juggling ${n} books. Very on-brand.`;
+  document.getElementById('home-hero').innerHTML =
+    `<p class="home-hero-greeting">${greeting}</p><p class="home-hero-message">${heroMsg}</p>`;
+
   document.getElementById('reading-books').innerHTML =
     '<h2 class="home-section-title">Currently Reading</h2>' +
     (readingBooks.length === 0
@@ -475,6 +484,14 @@ function openHighlightDetail(id) {
 }
 
 // ─── BOOKS ────────────────────────────────────────────────────────────────────
+function setStatusFilter(value) {
+  document.getElementById('books-status-filter').value = value;
+  document.querySelectorAll('.status-pill').forEach(p => p.classList.remove('active'));
+  const active = [...document.querySelectorAll('.status-pill')].find(p => p.textContent.trim() === (value || 'All'));
+  if (active) active.classList.add('active');
+  loadBooks();
+}
+
 function loadBooks() {
   const STATUS_ORDER   = ['Reading', 'Waitlisted', 'Paused', 'Completed'];
   const statusFilter   = document.getElementById('books-status-filter').value;
@@ -487,7 +504,7 @@ function loadBooks() {
     if (group.length === 0) return;
     html += `
       <div class="books-group">
-        <h2 class="books-group-heading">${status}<span class="books-group-count">${group.length}</span></h2>
+        <h2 class="books-group-heading accent-${status.toLowerCase().replace(' ','-')}">${status}<span class="books-group-count">${group.length}</span></h2>
         <div class="home-covers">
           ${group.map(b => `
             <div class="book-cover" onclick="openBook(${b.id})" style="background-color:${getCoverColor(b.category)}">

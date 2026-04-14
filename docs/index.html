@@ -21,6 +21,7 @@
 
     <!-- Home View -->
     <div id="home-view" class="view">
+      <div id="home-hero" class="home-hero"></div>
       <div id="reading-books"></div>
       <div class="home-bottom">
         <div id="dog-eared"></div>
@@ -31,22 +32,31 @@
     <!-- Books List View -->
     <div id="books-view" class="view hidden">
       <div class="books-toolbar">
-        <select id="books-status-filter" onchange="loadBooks()">
+        <div class="status-pills">
+          <button class="status-pill active" onclick="setStatusFilter('')">All</button>
+          <button class="status-pill" onclick="setStatusFilter('Reading')">Reading</button>
+          <button class="status-pill" onclick="setStatusFilter('Waitlisted')">Waitlisted</button>
+          <button class="status-pill" onclick="setStatusFilter('Paused')">Paused</button>
+          <button class="status-pill" onclick="setStatusFilter('Completed')">Completed</button>
+        </div>
+        <select id="books-status-filter" style="display:none">
           <option value="">All Statuses</option>
           <option value="Reading">Reading</option>
           <option value="Completed">Completed</option>
           <option value="Paused">Paused</option>
           <option value="Waitlisted">Waitlisted</option>
         </select>
-        <select id="books-category-filter" onchange="loadBooks()">
-          <option value="">All Categories</option>
-          <option value="Fiction">Fiction</option>
-          <option value="History">History</option>
-          <option value="Politics">Politics</option>
-          <option value="Philosophy">Philosophy</option>
-          <option value="Graphic Novels">Graphic Novels</option>
-        </select>
-        <button class="fab-inline" onclick="showAddBookForm()">+ Add Book</button>
+        <div class="books-toolbar-row">
+          <select id="books-category-filter" onchange="loadBooks()">
+            <option value="">All Categories</option>
+            <option value="Fiction">Fiction</option>
+            <option value="History">History</option>
+            <option value="Politics">Politics</option>
+            <option value="Philosophy">Philosophy</option>
+            <option value="Graphic Novels">Graphic Novels</option>
+          </select>
+          <button class="fab-inline" onclick="showAddBookForm()">+ Add Book</button>
+        </div>
       </div>
       <div id="books-list"></div>
     </div>
