@@ -139,9 +139,24 @@ SpellBound is a personal reading memory PWA. Pure static frontend (HTML/CSS/JS),
   - Paused → amber (`#f5a623`)
   - Completed → blue (`#6ea8fe`)
 
----
+### Wishlist Improvements (SW v22–v27)
 
-## Service Worker Version History
+- **Book lookup on Add Wishlist form** — debounced `oninput` on the title field queries the **Open Library API** (`openlibrary.org/search.json`) and shows clickable suggestion cards (title, author, category auto-fill). Switched from Google Books API which was silently failing.
+- **Draggable wishlist list** — Wishlist tab now renders a flat draggable list using the same `makeDraggableList()` utility as the Home waitlist. Reorder persists via `wishlist-order` key in the `meta` IndexedDB store and is included in Drive sync payload.
+- **Click to edit** — tapping a wishlist row title opens a pre-filled `#edit-wishlist-form` with title / category / author / note fields. `showEditWishlistForm(id)` populates the form; `updateWishlistItem(event)` saves changes.
+- **"Add to Books" button styling** — made subtle: transparent background, muted text colour, smaller padding/font — no longer visually competing with the row content.
+
+### Essay Sharing (SW v28–v32)
+
+- **Replaced Print button** with two separate actions: **✉ Gmail** and **🖨 Save as PDF**.
+- **Gmail button iterations**:
+  - v28: `navigator.share` Web Share API — opened Outlook instead of Gmail (OS-controlled, can't target specific app)
+  - v29: Gmail compose URL (`?view=cm&su=...&body=...`) — returned Error 400 for long essays (URL too long)
+  - v31: Clipboard + Gmail compose URL with subject only — works but requires manual paste
+  - v32 (current): **Gmail API draft creation** — builds an RFC 2822 MIME message, base64url-encodes it, and POSTs to `gmail.googleapis.com/gmail/v1/users/me/drafts`. Opens `mail.google.com/#drafts` on success so user can address and send the complete essay.
+  - Requires `gmail.compose` OAuth scope (added alongside `drive.appdata`) and Gmail API enabled in Google Cloud Console. Falls back to clipboard + compose URL if the API call fails.
+
+---
 
 | Version | Changes |
 |---|---|
@@ -163,6 +178,12 @@ SpellBound is a personal reading memory PWA. Pure static frontend (HTML/CSS/JS),
 | v19 | "The pages you've dog-eared" + Highlight Detail view |
 | v20 | Stale reading nudge; `updatedAt` on books, `savedAt` on highlights |
 | v21 | Sprint tab + challenges store (IndexedDB v3) |
+| v22–v24 | Wishlist book lookup (Open Library API); debounce + null-guards; cache-busting fixes |
+| v25 | Wishlist draggable flat list (reusing `makeDraggableList`); order persisted in `meta` store + Drive sync |
+| v26 | Click wishlist title → opens pre-filled edit form (`showEditWishlistForm`, `updateWishlistItem`) |
+| v27 | "Add to Books" button on wishlist rows made subtle (transparent bg, muted text) |
+| v28 | Essay sharing: added ✉ Gmail button + 🖨 Save as PDF button (was single Print button) |
+| v29–v32 | Gmail sharing iterations: URL approach failed (400 Bad Request, body too long); switched to Gmail API draft creation via `gmail.compose` OAuth scope |
 
 ---
 

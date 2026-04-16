@@ -3,6 +3,7 @@
 const GOOGLE_CLIENT_ID = '1039983743372-jd8ucsoagkevsras0s9c2g3mqvk7jq6g.apps.googleusercontent.com';
 const DRIVE_FILE_NAME  = 'spellbound-data.json';
 const DRIVE_SCOPE      = 'https://www.googleapis.com/auth/drive.appdata';
+const GMAIL_SCOPE      = 'https://www.googleapis.com/auth/gmail.compose';
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let currentBookId      = null;
@@ -122,7 +123,7 @@ function gapiLoaded() {
 function gisLoaded() {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
-    scope:     DRIVE_SCOPE,
+    scope:     `${DRIVE_SCOPE} ${GMAIL_SCOPE}`,
     callback:  '',
   });
   gisReady = true;
@@ -188,6 +189,7 @@ async function syncFromDrive() {
       for (const w of (data.wishlist    || [])) await dbPut('wishlist',    w);
       for (const c of (data.challenges  || [])) await dbPut('challenges',  c);
       if (data.waitlistOrder) await dbSetMeta('waitlist-order', data.waitlistOrder);
+      if (data.wishlistOrder) await dbSetMeta('wishlist-order', data.wishlistOrder);
       await loadData();
       refreshCurrentView();
       updateSyncStatus('Synced ' + new Date().toLocaleTimeString());
@@ -204,7 +206,8 @@ async function syncToDrive() {
   if (!gapiReady || !gapi.client.getToken()) return;
   try {
     const waitlistOrder = await dbGetMeta('waitlist-order') || [];
-    const payload  = JSON.stringify({ books, highlights, essays, wishlist, challenges, waitlistOrder });
+    const wishlistOrder = await dbGetMeta('wishlist-order') || [];
+    const payload  = JSON.stringify({ books, highlights, essays, wishlist, challenges, waitlistOrder, wishlistOrder });
     const file     = await getDriveFileId();
     const method   = file ? 'PATCH' : 'POST';
     const fileId   = file ? `/${file.id}` : '';
@@ -263,6 +266,11 @@ function refreshCurrentView() {
 
 async function saveWaitlistOrder(order) {
   await dbSetMeta('waitlist-order', order);
+  syncToDrive().catch(() => {});
+}
+
+async function saveWishlistOrder(order) {
+  await dbSetMeta('wishlist-order', order);
   syncToDrive().catch(() => {});
 }
 
@@ -591,23 +599,38 @@ function mapCategory(googleCats) {
 }
 
 let _lookupTimer   = null;
-let _categoryManualAdd  = false;
-let _categoryManualEdit = false;
+let _categoryManualAdd      = false;
+let _categoryManualEdit     = false;
+let _categoryManualWishlist = false;
 
 function markCategoryManual(form) {
-  if (form === 'add')  _categoryManualAdd  = true;
-  if (form === 'edit') _categoryManualEdit = true;
+  if (form === 'add')      _categoryManualAdd      = true;
+  if (form === 'edit')     _categoryManualEdit     = true;
+  if (form === 'wishlist') _categoryManualWishlist = true;
+}
+
+function _sugElId(form) {
+  if (form === 'add')      return 'add-book-suggestions';
+  if (form === 'wishlist') return 'wishlist-book-suggestions';
+  return 'edit-book-suggestions';
+}
+
+function _titleElId(form) {
+  if (form === 'add')      return 'book-title-input';
+  if (form === 'wishlist') return 'wishlist-title-input';
+  return 'edit-book-title';
 }
 
 function debounceBookLookup(form) {
   clearTimeout(_lookupTimer);
-  const titleEl = document.getElementById(form === 'add' ? 'book-title-input' : 'edit-book-title');
-  const sugEl   = document.getElementById(form === 'add' ? 'add-book-suggestions' : 'edit-book-suggestions');
-  const title   = titleEl.value.trim();
+  const titleEl = document.getElementById(_titleElId(form));
+  const sugEl   = document.getElementById(_sugElId(form));
+  if (!titleEl || !sugEl) return;
+  const title = titleEl.value.trim();
   if (title.length < 2) { sugEl.classList.add('hidden'); sugEl.innerHTML = ''; return; }
   sugEl.classList.remove('hidden');
   sugEl.innerHTML = '<p class="book-lookup-loading">Looking up…</p>';
-  _lookupTimer = setTimeout(() => fetchGoogleBooks(title, form), 2000);
+  _lookupTimer = setTimeout(() => fetchBookSuggestions(title, form), 500);
 }
 
 function triggerEditBookLookup() {
@@ -616,32 +639,34 @@ function triggerEditBookLookup() {
   const sugEl = document.getElementById('edit-book-suggestions');
   sugEl.classList.remove('hidden');
   sugEl.innerHTML = '<p class="book-lookup-loading">Looking up…</p>';
-  fetchGoogleBooks(title, 'edit');
+  fetchBookSuggestions(title, 'edit');
 }
 
-async function fetchGoogleBooks(title, form) {
-  const sugEl = document.getElementById(form === 'add' ? 'add-book-suggestions' : 'edit-book-suggestions');
+async function fetchBookSuggestions(title, form) {
+  const sugEl = document.getElementById(_sugElId(form));
+  if (!sugEl) return;
   try {
-    const url = `https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(title)}&maxResults=5&fields=items(volumeInfo(title,authors,categories,imageLinks))`;
+    const url = `https://openlibrary.org/search.json?title=${encodeURIComponent(title)}&limit=5&fields=title,author_name,subject,cover_i`;
     const res  = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    if (!data.items || data.items.length === 0) {
+    if (!data.docs || data.docs.length === 0) {
       sugEl.innerHTML = '<p class="book-lookup-loading">No results found.</p>';
       return;
     }
-    renderBookSuggestions(data.items, form, sugEl);
-  } catch {
+    renderBookSuggestions(data.docs, form, sugEl);
+  } catch (err) {
     sugEl.innerHTML = '<p class="book-lookup-loading">Lookup failed.</p>';
+    console.error('Book lookup error:', err);
   }
 }
 
 function renderBookSuggestions(items, form, sugEl) {
   const cards = items.map((item, i) => {
-    const v       = item.volumeInfo || {};
-    const title   = v.title || '';
-    const author  = (v.authors || []).join(', ');
-    const cat     = mapCategory(v.categories);
-    const thumb   = v.imageLinks?.thumbnail?.replace('http://', 'https://') || '';
+    const title  = item.title || '';
+    const author = (item.author_name || []).join(', ');
+    const cat    = mapCategory(item.subject);
+    const thumb  = item.cover_i ? `https://covers.openlibrary.org/b/id/${item.cover_i}-M.jpg` : '';
     return `<div class="book-suggestion-card" onclick="applyBookSuggestion(${i}, '${form}')">
       ${thumb ? `<img class="book-sug-thumb" src="${thumb}" alt="">` : `<div class="book-sug-thumb book-sug-thumb-placeholder"></div>`}
       <div class="book-sug-info">
@@ -652,21 +677,17 @@ function renderBookSuggestions(items, form, sugEl) {
     </div>`;
   }).join('');
   sugEl.innerHTML = cards +
-    `<button type="button" class="book-sug-none" onclick="document.getElementById('${form === 'add' ? 'add' : 'edit'}-book-suggestions').classList.add('hidden')">None of these</button>`;
-  // stash data for apply
-  sugEl._suggestions = items.map(item => {
-    const v = item.volumeInfo || {};
-    return {
-      title:    v.title || '',
-      author:   (v.authors || []).join(', '),
-      category: mapCategory(v.categories),
-      coverUrl: v.imageLinks?.thumbnail?.replace('http://', 'https://') || '',
-    };
-  });
+    `<button type="button" class="book-sug-none" onclick="document.getElementById('${_sugElId(form)}').classList.add('hidden')">None of these</button>`;
+  sugEl._suggestions = items.map(item => ({
+    title:    item.title || '',
+    author:   (item.author_name || []).join(', '),
+    category: mapCategory(item.subject),
+    coverUrl: item.cover_i ? `https://covers.openlibrary.org/b/id/${item.cover_i}-M.jpg` : '',
+  }));
 }
 
 function applyBookSuggestion(index, form) {
-  const sugEl = document.getElementById(form === 'add' ? 'add-book-suggestions' : 'edit-book-suggestions');
+  const sugEl = document.getElementById(_sugElId(form));
   const s     = sugEl._suggestions[index];
   if (!s) return;
   if (form === 'add') {
@@ -675,6 +696,12 @@ function applyBookSuggestion(index, form) {
     if (!_categoryManualAdd) {
       document.getElementById('book-category-input').value = s.category;
       toggleAddBookFields();
+    }
+  } else if (form === 'wishlist') {
+    document.getElementById('wishlist-title-input').value  = s.title;
+    document.getElementById('wishlist-author-input').value = s.author;
+    if (!_categoryManualWishlist) {
+      document.getElementById('wishlist-category-input').value = s.category;
     }
   } else {
     document.getElementById('edit-book-title').value      = s.title;
@@ -986,6 +1013,35 @@ async function deleteEssayConfirmed(id) {
 
 function printEssay() { window.print(); }
 
+async function shareEssay() {
+  const essay = essays.find(e => e.id === currentEssayId);
+  if (!essay) return;
+  const subject = essay.title;
+  const bodyText = `${essay.title}\n\n${essay.content}`;
+  // Build RFC 2822 MIME message and base64url-encode it
+  const mime = [
+    `Subject: ${subject}`,
+    'Content-Type: text/plain; charset=utf-8',
+    '',
+    bodyText
+  ].join('\r\n');
+  const encoded = btoa(unescape(encodeURIComponent(mime)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  try {
+    await gapi.client.request({
+      path:   'https://gmail.googleapis.com/gmail/v1/users/me/drafts',
+      method: 'POST',
+      body:   JSON.stringify({ message: { raw: encoded } })
+    });
+    window.open('https://mail.google.com/mail/#drafts', '_blank');
+  } catch (err) {
+    // Fallback: copy to clipboard and open blank compose
+    navigator.clipboard.writeText(bodyText).catch(() => {});
+    window.open(`https://mail.google.com/mail/?view=cm&su=${encodeURIComponent(subject)}`, '_blank');
+    alert('Could not create draft automatically. Essay copied to clipboard — paste into Gmail.');
+  }
+}
+
 // ─── FORMS ────────────────────────────────────────────────────────────────────
 function setMediumBtn(groupSelector, value) {
   document.querySelectorAll(`${groupSelector} .medium-btn`).forEach(btn => {
@@ -1056,43 +1112,74 @@ function initializeForms() {
 }
 
 // ─── WISHLIST ─────────────────────────────────────────────────────────────────
-function loadWishlist() {
-  const CATEGORIES = ['Fiction', 'History', 'Politics', 'Philosophy', 'Graphic Novels'];
-  const container  = document.getElementById('wishlist-list');
+async function loadWishlist() {
+  const container = document.getElementById('wishlist-list');
   if (wishlist.length === 0) {
     container.innerHTML = '<p class="home-empty">Nothing on your wishlist yet.</p>';
     return;
   }
-  let html = '';
-  CATEGORIES.forEach(cat => {
-    const group = wishlist.filter(w => w.category === cat).sort((a, b) => a.title.localeCompare(b.title));
-    if (group.length === 0) return;
-    html += `<div class="wishlist-group">
-      <h2 class="wishlist-group-heading">
-        <span class="wishlist-cat-dot" style="background:${getCoverColor(cat)}"></span>
-        ${cat}
-      </h2>
-      ${group.map(w => `
-        <div class="wishlist-item" id="wishlist-item-${w.id}">
-          <div class="wishlist-item-main">
-            <span class="wishlist-item-title">${w.title}</span>
-            ${w.author ? `<span class="wishlist-item-author">${w.author}</span>` : ''}
-            ${w.note   ? `<span class="wishlist-item-note">${w.note}</span>`   : ''}
-          </div>
-          <div class="wishlist-item-actions">
-            <button class="wishlist-move-btn" onclick="showMoveToBooks(${w.id})">&#10142; Add to Books</button>
-            <button class="delete-btn" onclick="deleteWishlistItem(${w.id})">&#128465;</button>
-          </div>
-          <div class="wishlist-status-prompt hidden" id="wishlist-prompt-${w.id}">
-            <span class="wishlist-prompt-label">Add as:</span>
-            <button class="wishlist-status-btn" onclick="moveToBooks(${w.id}, 'Waitlisted')">Waitlisted</button>
-            <button class="wishlist-status-btn" onclick="moveToBooks(${w.id}, 'Reading')">Reading</button>
-            <button class="wishlist-cancel-btn" onclick="hideMoveToBooks(${w.id})">Cancel</button>
-          </div>
-        </div>`).join('')}
-    </div>`;
-  });
-  container.innerHTML = html;
+
+  const savedOrder = await dbGetMeta('wishlist-order') || [];
+  const ordered = [
+    ...savedOrder.map(id => wishlist.find(w => w.id === id)).filter(Boolean),
+    ...wishlist.filter(w => !savedOrder.includes(w.id))
+  ];
+
+  const listEl = document.createElement('div');
+  listEl.id = 'wishlist-draggable-list';
+  listEl.innerHTML = ordered.map(w => `
+    <div class="home-waitlist-item" data-id="${w.id}">
+      <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
+      <div class="home-waitlist-spine" style="background-color:${getCoverColor(w.category)}"></div>
+      <div class="home-waitlist-info" onclick="showEditWishlistForm(${w.id})">
+        <span class="home-waitlist-title">${w.title}</span>
+        ${w.author ? `<span class="home-waitlist-author">${w.author}</span>` : ''}
+        <span class="home-waitlist-category">${w.category}</span>
+      </div>
+      <div class="wishlist-item-actions">
+        <button class="wishlist-move-btn" onclick="showMoveToBooks(${w.id})">&#10142; Add to Books</button>
+        <button class="delete-btn" onclick="deleteWishlistItem(${w.id})">&#128465;</button>
+      </div>
+      <div class="wishlist-status-prompt hidden" id="wishlist-prompt-${w.id}">
+        <span class="wishlist-prompt-label">Add as:</span>
+        <button class="wishlist-status-btn" onclick="moveToBooks(${w.id}, 'Waitlisted')">Waitlisted</button>
+        <button class="wishlist-status-btn" onclick="moveToBooks(${w.id}, 'Reading')">Reading</button>
+        <button class="wishlist-cancel-btn" onclick="hideMoveToBooks(${w.id})">Cancel</button>
+      </div>
+    </div>`).join('');
+
+  container.innerHTML = '';
+  container.appendChild(listEl);
+  makeDraggableList(listEl, saveWishlistOrder);
+}
+
+function showEditWishlistForm(id) {
+  const item = wishlist.find(w => w.id === id);
+  if (!item) return;
+  document.getElementById('edit-wishlist-title').value    = item.title;
+  document.getElementById('edit-wishlist-category').value = item.category;
+  document.getElementById('edit-wishlist-author').value   = item.author || '';
+  document.getElementById('edit-wishlist-note').value     = item.note   || '';
+  const form = document.getElementById('edit-wishlist-form');
+  form._editId = id;
+  form.classList.remove('hidden');
+  form.style.display = 'flex';
+}
+
+async function updateWishlistItem(event) {
+  event.preventDefault();
+  const form = document.getElementById('edit-wishlist-form');
+  const id   = form._editId;
+  const item = wishlist.find(w => w.id === id);
+  if (!item) return;
+  item.title    = document.getElementById('edit-wishlist-title').value;
+  item.category = document.getElementById('edit-wishlist-category').value;
+  item.author   = document.getElementById('edit-wishlist-author').value;
+  item.note     = document.getElementById('edit-wishlist-note').value;
+  await dbPut('wishlist', item);
+  hideForm();
+  await saveAndSync();
+  loadWishlist();
 }
 
 function showMoveToBooks(id) {
@@ -1132,6 +1219,9 @@ async function deleteWishlistItem(id) {
 }
 
 function showAddWishlistForm() {
+  _categoryManualWishlist = false;
+  document.getElementById('wishlist-book-suggestions').classList.add('hidden');
+  document.getElementById('wishlist-book-suggestions').innerHTML = '';
   document.getElementById('add-wishlist-form').classList.remove('hidden');
   document.getElementById('add-wishlist-form').style.display = 'flex';
 }

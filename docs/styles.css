@@ -1011,27 +1011,33 @@ main { min-height: 100%; }
   align-items: center;
 }
 .wishlist-move-btn {
-  background: rgba(245,166,35,0.15);
-  color: var(--accent2);
-  border: 1px solid rgba(245,166,35,0.3);
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid rgba(255,255,255,0.12);
   border-radius: 8px;
-  padding: 7px 12px;
-  font-size: 0.78rem;
-  font-weight: 600;
+  padding: 5px 10px;
+  font-size: 0.72rem;
+  font-weight: 500;
   cursor: pointer;
-  flex: 1;
-  transition: background 0.15s;
+  transition: color 0.15s, border-color 0.15s;
 }
-.wishlist-move-btn:active { background: rgba(245,166,35,0.3); }
+.wishlist-move-btn:active { color: var(--accent2); border-color: rgba(245,166,35,0.4); }
 .wishlist-status-prompt {
-  margin-top: 10px;
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  padding-top: 10px;
+  width: 100%;
+  padding-top: 8px;
+  margin-top: 6px;
   border-top: 1px solid rgba(255,255,255,0.06);
 }
+
+/* Wishlist draggable rows need to wrap so the status prompt sits below */
+#wishlist-draggable-list .home-waitlist-item {
+  flex-wrap: wrap;
+}
+
 .wishlist-prompt-label { font-size: 0.75rem; color: var(--text-muted); }
 .wishlist-status-btn {
   background: var(--surface2);

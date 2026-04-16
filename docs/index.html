@@ -150,7 +150,8 @@
       <div class="essay-detail-actions no-print">
         <button onclick="showView('essays')">&#8592; Back to Essays</button>
         <button onclick="showEditEssayForm()">Edit</button>
-        <button onclick="printEssay()">Share as PDF</button>
+        <button onclick="shareEssay()">&#9993; Gmail</button>
+        <button onclick="printEssay()">&#128438; Save as PDF</button>
         <button onclick="handleDeleteEssay(currentEssayId, event)" class="delete-btn">&#128465; Delete</button>
       </div>
       <div class="essay-print-content">
@@ -355,14 +356,38 @@
       </form>
     </div>
 
+    <!-- Edit Wishlist Form -->
+    <div id="edit-wishlist-form" class="form hidden">
+      <h3>Edit Wishlist Item</h3>
+      <form onsubmit="updateWishlistItem(event)">
+        <label for="edit-wishlist-title">Title</label>
+        <input type="text" id="edit-wishlist-title" placeholder="Title" required>
+        <label for="edit-wishlist-category">Category</label>
+        <select id="edit-wishlist-category" required>
+          <option value="Fiction">Fiction</option>
+          <option value="History">History</option>
+          <option value="Politics">Politics</option>
+          <option value="Philosophy">Philosophy</option>
+          <option value="Graphic Novels">Graphic Novels</option>
+        </select>
+        <label for="edit-wishlist-author">Author <span style="font-weight:normal;color:#888;">(optional)</span></label>
+        <input type="text" id="edit-wishlist-author" placeholder="Author">
+        <label for="edit-wishlist-note">Note <span style="font-weight:normal;color:#888;">(optional)</span></label>
+        <textarea id="edit-wishlist-note" placeholder="Why you want to read it..."></textarea>
+        <button type="submit">Save</button>
+        <button type="button" onclick="hideForm()">Cancel</button>
+      </form>
+    </div>
+
     <!-- Add Wishlist Form -->
     <div id="add-wishlist-form" class="form hidden">
       <h3>Add to Wishlist</h3>
       <form onsubmit="addWishlistItem(event)">
         <label for="wishlist-title-input">Title</label>
-        <input type="text" id="wishlist-title-input" placeholder="Title" required>
+        <input type="text" id="wishlist-title-input" placeholder="Title" required oninput="debounceBookLookup('wishlist')">
+        <div id="wishlist-book-suggestions" class="book-suggestions hidden"></div>
         <label for="wishlist-category-input">Category</label>
-        <select id="wishlist-category-input" required>
+        <select id="wishlist-category-input" required onchange="markCategoryManual('wishlist')">
           <option value="Fiction">Fiction</option>
           <option value="History">History</option>
           <option value="Politics">Politics</option>
