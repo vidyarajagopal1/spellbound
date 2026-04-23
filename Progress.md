@@ -217,6 +217,12 @@ SpellBound is a personal reading memory PWA. Pure static frontend (HTML/CSS/JS),
 - **Favicon**: generated `icon-192.png` and `icon-512.png` from source PNG (`SpellBound Favicon Green.png`) using `sharp`; trimmed white padding; applied dark background (`#1a1a2e`); added `<link rel="icon">` and `<link rel="apple-touch-icon">` to `index.html`. Icons appear on browser tabs, Android home screen (via manifest), and iOS home screen.
 - **Header logo**: generated `logo-header.png` with white background removed (transparent), green graphic only; added `.app-title-group` flex wrapper in header with logo to the left of the title text; logo sized at `44px` height via CSS.
 
+### Favicon Overhaul (post-v76)
+- Replaced hand-generated icon files with a proper **favicon.io** icon set
+- Files added: `favicon.ico`, `favicon-16x16.png`, `favicon-32x32.png`, `apple-touch-icon.png` (180×180, iOS), `android-chrome-192x192.png`, `android-chrome-512x512.png`
+- `index.html` updated: replaced single `<link rel="icon">` + `<link rel="apple-touch-icon">` with the full set including `favicon.ico`, sized 16×16 and 32×32 PNGs, and 180×180 Apple touch icon
+- `manifest.json` updated: icons array now points to `android-chrome-192x192.png` and `android-chrome-512x512.png`
+
 ---
 
 - **Toggle buttons** (medium, rating): JS click handlers on each button, `active` class toggled, `set*Btn(selector, value)` helper used to pre-fill forms
