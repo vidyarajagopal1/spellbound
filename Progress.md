@@ -212,6 +212,7 @@ SpellBound is a personal reading memory PWA. Pure static frontend (HTML/CSS/JS),
 | v75 | "Commitment is complicated" → "Commitment can sometimes be complicated" |
 | v76 | Added favicon: generated `icon-192.png` and `icon-512.png` from source PNG; added `<link rel="icon">` and `<link rel="apple-touch-icon">` to `index.html`; trimmed white padding and applied dark background (`#1a1a2e`) to icons |
 | v76 | Added header logo: generated `logo-header.png` (transparent background, green graphic) from source PNG; added `.app-title-group` wrapper with logo + title side by side; bumped SW cache to v76 |
+| v77 | Highlights tab visual overhaul — see below |
 
 ### Favicon & Header Logo (SW v76)
 - **Favicon**: generated `icon-192.png` and `icon-512.png` from source PNG (`SpellBound Favicon Green.png`) using `sharp`; trimmed white padding; applied dark background (`#1a1a2e`); added `<link rel="icon">` and `<link rel="apple-touch-icon">` to `index.html`. Icons appear on browser tabs, Android home screen (via manifest), and iOS home screen.
@@ -223,6 +224,16 @@ SpellBound is a personal reading memory PWA. Pure static frontend (HTML/CSS/JS),
 - `index.html` updated: replaced single `<link rel="icon">` + `<link rel="apple-touch-icon">` with the full set including `favicon.ico`, sized 16×16 and 32×32 PNGs, and 180×180 Apple touch icon
 - `manifest.json` updated: icons array now points to `android-chrome-192x192.png` and `android-chrome-512x512.png`
 
+### Highlights Tab Visual Overhaul (v77)
+- **Removed search input** — the category filter alone is sufficient; search served no real purpose
+- **Toolbar collapsed to one row** — category dropdown (neutral style) + red `+ Add Highlight ▾` button side by side
+- **`+ Add Highlight` dropdown menu** — replaces three full-width action buttons; opens a small positioned menu with Phosphor Bold icons (`ph-pencil-simple`, `ph-image`, `ph-upload-simple`) and labels; dismisses on outside click
+- **Delete button removed from highlight cards** — cards are now completely buttonless; tapping a card opens the edit form
+- **Delete moved into edit form** — `Delete` button added between Save and Cancel in the edit highlight form, so destructive action is behind an intentional tap
+- **Edit button removed from cards** — the edit pencil icon is gone; the whole card is the tap target for editing
+- **Card treatment updated** — highlight cards now use the same `home-quote-card` parchment style as the "Pages you've dog-eared" section on Home: cream background, top-border accent in category colour, dog-ear fold pseudo-element, Caveat italic font for quote text, Playfair Display italic for source attribution, slight rotation with hover-straighten
+- **`"` quote mark removed** from all highlight cards in both the tab and the book detail view
+
 ---
 
 - **Toggle buttons** (medium, rating): JS click handlers on each button, `active` class toggled, `set*Btn(selector, value)` helper used to pre-fill forms
@@ -230,3 +241,118 @@ SpellBound is a personal reading memory PWA. Pure static frontend (HTML/CSS/JS),
 - **Favourite Character field**: shown/hidden based on category === 'Fiction' or 'Graphic Novels'
 - **SW bump**: every feature push increments the cache version so returning users get fresh assets
 - **Drive sync**: `saveAndSync()` called after every write — serialises all books + highlights to JSON and uploads to `appDataFolder`
+
+---
+
+## AI-Assisted Essay Builder (v78–v87)
+
+A full end-to-end multi-step flow for building essays from reading highlights, powered by OpenAI or Anthropic. Accessible from the Essays tab via "✦ Build Essay". One draft at a time. Resumable.
+
+### Piece 1 — Settings Screen (v78)
+- Gear icon (`ph-gear-six`) in the header, right-aligned in `.header-right` flex wrapper
+- `settings-view`: AI provider dropdown (OpenAI / Anthropic) + masked API key input + eye-toggle + Save button
+- `loadSettings()` / `saveSettings()` / `toggleApiKeyVisibility()` functions
+- API key stored in `meta` IndexedDB store and never included in Drive sync payload
+- Fixed header layout: `.header-right { flex-shrink: 0 }`, `.app-title-group { flex: 1 1 0; overflow: hidden }`
+- Fixed SW cache versioning bug that was hiding the gear icon on returning visits
+
+### Piece 2 — AI Service Layer (v78)
+- `callAI(systemPrompt, thread, userMessage)` — core `fetch()` to OpenAI (`gpt-4o`) or Anthropic (`claude-sonnet-4-5`) REST APIs using user-supplied key from `meta` store
+- `callAIWithFeedback(...)` — wraps `callAI` with a UI feedback element; gracefully handles missing API key
+- `AI_PROMPTS` object with 7 system prompts: `compiledThought`, `research`, `sectionDraft`, `finalize`, `titles`, `subtitle`, `tags`
+- 7 typed call functions: `aiCompiledThought`, `aiResearch`, `aiSectionDraft`, `aiFinalize`, `aiTitles`, `aiSubtitle`, `aiTags`
+
+### Piece 3 — Database (v78)
+- IndexedDB bumped v3 → v4; `essay_drafts` object store added
+- Draft helpers: `dbGetActiveDraft()`, `dbSaveDraft(draft)`, `dbDeleteDraft(id)`, `newDraftTemplate()`
+- `newDraftTemplate()` initialises all fields for all steps (excerpt, feeling, stage notes, compiled thought, research, outline, sections, finalized draft, title options, subtitle, tags)
+- `syncFromDrive()` and `syncToDrive()` updated to include `essay_drafts` store
+
+### Piece 4 — Build Flow Steps 2–4 (v78)
+- "✦ Build Essay" / "↩ Resume Essay" button added to essays toolbar
+- Full-screen overlay (`#build-essay-overlay`) with step indicator, close button, and close-confirm modal (Save Draft / Discard / Keep Writing)
+- `_buildDraft` module-level state variable; `openBuildEssay()`, `closeBuildEssay()`, `saveBuildDraft()`, `discardBuildDraft()`, `_closeBuildOverlay()`
+- `renderBuildStep(draft)` — switch-based state machine routing to step renderers
+- `_autoSave()` — upserts draft to IndexedDB on every meaningful action
+- **Step 2** (Excerpt): paste or type the passage that sparked the idea → `buildStep2Next()`
+- **Step 3** (Feeling): 7 feeling-option pills (Recognition / Discomfort / Curiosity / Memory / Tension / Surprise / Longing) → `selectFeeling()`, `buildStep3Next()`
+- **Step 4** (Thinking): 5 thinking stages (Open → Expand → Focus → Deepen → Edge), each with 3 question pills + free-text textarea; stage progress badge; skip allowed → `toggleQuestion()`, `buildStageNext()`, `buildStageSkip()`
+- **Step 4o** (Compiled Thought): AI generates a synthesised thought from all stage notes; refinement textarea loop; Yes / Edit / Rethink actions → `_triggerCompiledThought()`, `refineCompiledThought()`, `compiledThoughtYes/Edit/Rethink()`
+- **Step 4n** (Next Action): two option cards — "Research first" (→ step 5) or "Start writing" (→ step 6)
+
+### Piece 5 — Build Flow Steps 5–7 (v79)
+- **Step 5** (Research): multi-select category chips up to 3 (Frameworks / Theories / Books / Quotes / Examples / Opposing viewpoints); `aiResearch()` returns 2–3 items per category; each item has name / what it is / core idea / why it fits; "Use this" reveals placement chips (Intro / Supporting point / Counterpoint / Not sure); attached items saved to `draft.attached_research[]`; refinement loop; "Continue without research" skip
+- **Step 6** (Structure): three format cards (Essay 800–1500w / Blog Post 500–900w / Reflection 300–700w); selecting a format auto-generates a default outline; inline outline editor with editable titles, move up/down, delete, add section; saves `draft.format` + `draft.outline[]`
+- **Step 7** (Write): section by section; `aiSectionDraft()` uses outline + compiled thought + attached research + previous sections as context; editable AI output per section; refinement loop; Previous / Next section navigation; after last section advances to step `'9a'`
+- Bug fix in same version: `function dbGetMeta(key) {` declaration had been accidentally dropped in Piece 3's insertion — restored
+
+### Piece 6 — Build Flow Steps 9a–9d (v80)
+- **Step 9a** (Polish): `aiFinalize()` reassembles and polishes all draft sections into a single flowing essay; refinement loop; "Choose a title →" advances
+- **Step 9b** (Title): `aiTitles()` generates up to 5 title options parsed into selectable option cards; refinement loop for different styles; "Add a subtitle →" once selected
+- **Step 9c** (Subtitle): `aiSubtitle()` generates a single subtitle using the chosen title as context; refinement loop; "Skip subtitle" option
+- **Step 9d** (Tags): `aiTags()` generates 7–8 tag chips; toggle-select any; refinement loop; "Skip & Publish" or "Publish essay →"
+- `saveBuiltEssay()` — assembles final essay `{ id, title, subtitle, date, tags (comma string), content, source: 'built' }`, writes to `essays` store, deletes draft, closes overlay, opens essay detail view
+
+### Piece 7 — Essay Detail Related Sections (v81)
+- Two new sections appended below essay body in `essay-detail-view`
+- **Related Highlights**: finds highlights whose `text + whyItStayed` contains any of the essay's tags (case-insensitive keyword match); shows up to 6; each card is styled with the book's category colour as a left border; tappable to open highlight detail
+- **Related Essays**: finds other essays sharing at least one tag; shows up to 4; tappable cards with title, subtitle, tags
+- `_getEssayTags(essay)` helper normalises tags whether stored as comma string (manual essays) or array (built essays)
+- Both sections are hidden when there are no matches
+
+### Piece 8 — Essays Grid Tag Filters (v82)
+- `#essays-tag-filters` div added between toolbar and grid in HTML
+- `_essayTagFilter` state variable (empty = "All")
+- `loadEssays()` collects all unique tags from all essays, sorts them, renders "All" pill + one pill per tag
+- Active pill highlighted with `--accent2` tint; scrollable horizontally
+- `setEssayTagFilter(tag)` updates state and re-renders grid
+
+### Essays Tab UI Overhaul (v83–v87)
+
+**v83 — Full redesign**
+- Buttons redesigned as equal `.essays-action-btn` (flex: 1, same size, same style)
+- Tag filter bar changed to single non-wrapping horizontally scrollable row (no multi-line wrapping)
+- Tags removed from individual essay cards (filter bar carries that information)
+- Essay cards redesigned: title (2-line clamp) + subtitle (1-line ellipsis) + date bottom-left; no preview, no tags, no delete button
+- Delete button moved to essay detail view only
+- Section header added: "N ESSAYS" label (uppercase `--accent2`) + Newest / Oldest / A–Z sort buttons in a grouped pill control
+- `_essaySort` session-only state variable; `setEssaySort(val)` function
+- `formatDate()` updated to humanised format ("9 Apr 2026") using `toLocaleDateString` with timezone fix (`T00:00:00` suffix)
+- Option C color approach: `--accent2` used only at structural level (count label, active sort button); cards neutral
+
+**v84 — Color pass**
+- Essay cards get warm cream left border (`rgba(232,223,200,0.18)`) that brightens on hover/tap
+- Date tinted `--accent2` at low opacity
+- "Build Essay" button gets `--accent2` background tint and matching border to signal it as the featured action
+- Sort buttons grouped inside `--surface2` pill container; active sort gets `--accent2` background chip
+
+**v85 — Tag bar scroll hint**
+- `#essays-tag-filters` wrapped in `.essays-tag-wrap` div
+- `::after` pseudo-element fades right edge (`transparent → --bg`) to signal more pills off-screen
+- JS scroll listener on the filter row toggles `.scrolled-end` class on the wrapper, fading out the gradient once the user reaches the end
+- `checkEnd()` called immediately on render — gradient hidden if all pills fit without scrolling
+
+**v86 — Button color correction**
+- Both buttons changed to solid `var(--accent)` red fill with white text — matches nav tab red exactly
+- Hover/active use opacity only so red stays consistent
+
+**v87 — Spacing improvements + final button style**
+- Buttons: solid `var(--accent)` red, `padding: 0.75rem`, `gap: 0.75rem` between them, toolbar `padding: 1rem 0`
+- Tag row `padding-bottom` increased to `1rem`
+- Section header `margin-bottom` increased to `1rem`, `padding-bottom` to `0.75rem`
+- Card gap increased from `10px` to `14px`
+
+---
+
+| Version | Changes |
+|---|---|
+| v78 | AI Essay Builder: Settings screen, AI service layer, DB v4 + essay_drafts, Build flow steps 2–4 |
+| v79 | Build flow steps 5–7 (Research, Structure, Write); fix: restored missing `dbGetMeta` declaration |
+| v80 | Build flow steps 9a–9d (Polish, Title, Subtitle, Tags, Publish) |
+| v81 | Essay detail: Related Highlights + Related Essays sections |
+| v82 | Essays grid: tag filter pill bar, `_essayTagFilter` state, `setEssayTagFilter()` |
+| v83 | Essays tab UI overhaul: equal buttons, scrollable tag bar, section header + sort, clean cards, humanised dates |
+| v84 | Essays color pass: card left borders, Build Essay accent, sort pill container |
+| v85 | Tag bar scroll fade hint (`::after` gradient + JS scroll listener) |
+| v86 | Buttons corrected to solid `--accent` red |
+| v87 | Spacing pass: toolbar, tag row, section header, card gap |

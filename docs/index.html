@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=87">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
@@ -26,7 +26,12 @@
       <img src="logo-header.png" class="app-logo" alt="SpellBound logo">
       <h1 class="app-title">SpellBound</h1>
     </div>
-    <div id="sync-status" class="sync-status" onclick="signIn()" title="Tap to sign in with Google"></div>
+    <div class="header-right">
+      <div id="sync-status" class="sync-status" onclick="signIn()" title="Tap to sign in with Google"></div>
+      <button class="header-settings-btn" onclick="showView('settings')" title="Settings" aria-label="Settings">
+        <i class="ph-bold ph-gear-six"></i>
+      </button>
+    </div>
   </header>
   <main>
 
@@ -95,7 +100,6 @@
     <!-- Highlights View -->
     <div id="highlights-view" class="view hidden">
       <div class="highlights-toolbar">
-        <input type="text" id="highlight-search" placeholder="Search highlights..." oninput="loadHighlights()">
         <div class="highlights-toolbar-row">
           <select id="highlight-category-filter" onchange="loadHighlights()">
             <option value="">All Categories</option>
@@ -105,21 +109,34 @@
             <option value="Philosophy">Philosophy</option>
             <option value="Graphic Novels">Graphic Novels</option>
           </select>
+          <div class="hl-add-wrap">
+            <button class="hl-add-btn" onclick="toggleHlAddMenu(event)">+ Add Highlight <i class="ph-bold ph-caret-down"></i></button>
+            <div id="hl-add-menu" class="hl-add-menu hidden">
+              <button onclick="closeHlAddMenu(); showAddHighlightForm()"><i class="ph-bold ph-pencil-simple"></i><span>Add as text</span></button>
+              <button onclick="closeHlAddMenu(); importHighlightFromImage()"><i class="ph-bold ph-image"></i><span>Add from image</span></button>
+              <button onclick="closeHlAddMenu(); importKindleClippings()"><i class="ph-bold ph-upload-simple"></i><span>Kindle upload</span></button>
+            </div>
+          </div>
         </div>
-        <div class="highlights-toolbar-actions">
-          <button class="hl-action-btn" onclick="showAddHighlightForm()">+ Add as text</button>
-          <button class="hl-action-btn" onclick="importHighlightFromImage()">&#128247; Add from image</button>
-          <input type="file" id="highlight-image-input" accept="image/*" style="display:none" onchange="handleHighlightImageFile(event)">
-          <button class="hl-action-btn" onclick="importKindleClippings()">&#128218; Kindle upload</button>
-          <input type="file" id="kindle-file-input" accept=".json" style="display:none" onchange="handleKindleFile(event)">
-        </div>
+        <input type="file" id="highlight-image-input" accept="image/*" style="display:none" onchange="handleHighlightImageFile(event)">
+        <input type="file" id="kindle-file-input" accept=".json" style="display:none" onchange="handleKindleFile(event)">
       </div>
       <div id="all-highlights"></div>
     </div>
 
     <!-- Essays View -->
     <div id="essays-view" class="view hidden">
-      <button onclick="showAddEssayForm()">Add Essay</button>
+      <div class="essays-toolbar">
+        <button class="essays-action-btn" onclick="showAddEssayForm()">+ Add Essay</button>
+        <button class="essays-action-btn" id="build-essay-btn" onclick="openBuildEssay()">&#10022; Build Essay</button>
+      </div>
+      <div class="essays-tag-wrap" id="essays-tag-wrap">
+        <div id="essays-tag-filters" class="essays-tag-filters"></div>
+      </div>
+      <div class="essays-list-header">
+        <span id="essays-count" class="essays-count"></span>
+        <div class="essays-sort-row" id="essays-sort-row"></div>
+      </div>
       <div id="essays-grid" class="essays-grid"></div>
     </div>
 
@@ -175,6 +192,8 @@
         <p id="essay-detail-date" class="essay-detail-meta"></p>
         <p id="essay-detail-tags" class="essay-detail-meta"></p>
         <div id="essay-detail-body" class="essay-body"></div>
+        <div id="essay-related-highlights" class="essay-related-section"></div>
+        <div id="essay-related-essays" class="essay-related-section"></div>
       </div>
     </div>
 
@@ -351,6 +370,7 @@
         <label for="edit-highlight-date">Date</label>
         <input type="date" id="edit-highlight-date">
         <button type="submit">Save</button>
+        <button type="button" class="delete-btn" onclick="handleDeleteHighlight(currentHighlightId, event); hideForm()">Delete</button>
         <button type="button" onclick="hideForm()">Cancel</button>
       </form>
     </div>
@@ -440,6 +460,39 @@
       </form>
     </div>
 
+    <!-- Settings View -->
+    <div id="settings-view" class="view hidden">
+      <div class="settings-container">
+        <h2 class="settings-title">Settings</h2>
+
+        <section class="settings-section">
+          <h3 class="settings-section-title">AI Assistant</h3>
+          <p class="settings-section-desc">Your API key is stored only on this device and is never synced to Google Drive.</p>
+
+          <div class="settings-field">
+            <label for="settings-ai-provider">AI Provider</label>
+            <select id="settings-ai-provider">
+              <option value="openai">OpenAI (GPT-4o)</option>
+              <option value="claude">Anthropic (Claude)</option>
+            </select>
+          </div>
+
+          <div class="settings-field">
+            <label for="settings-ai-key">API Key</label>
+            <div class="settings-key-row">
+              <input type="password" id="settings-ai-key" placeholder="Paste your API key here" autocomplete="off" spellcheck="false">
+              <button class="settings-key-toggle" onclick="toggleApiKeyVisibility()" aria-label="Toggle key visibility">
+                <i class="ph-bold ph-eye" id="settings-key-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <button class="settings-save-btn" onclick="saveSettings()">Save</button>
+          <p id="settings-save-msg" class="settings-save-msg hidden"></p>
+        </section>
+      </div>
+    </div>
+
   </main>
 
   <!-- Category Modal for new books during import -->
@@ -484,8 +537,26 @@
 
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=87"></script>
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+
+  <!-- Build Essay Full-Screen Overlay -->
+  <div id="build-essay-overlay" class="build-overlay hidden">
+    <div class="build-header">
+      <span class="build-step-indicator" id="build-step-indicator">Build Essay</span>
+      <button class="build-close-btn" onclick="closeBuildEssay()" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="build-body" id="build-body"></div>
+    <div id="build-close-modal" class="build-close-modal hidden">
+      <div class="build-close-modal-box">
+        <p class="build-close-modal-title">Save your progress?</p>
+        <button class="build-close-modal-btn primary" onclick="saveBuildDraft()">Save Draft</button>
+        <button class="build-close-modal-btn danger" onclick="discardBuildDraft()">Discard</button>
+        <button class="build-close-modal-btn ghost" onclick="hideBuildCloseModal()">Keep writing</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
