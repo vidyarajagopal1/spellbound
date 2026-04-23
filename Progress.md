@@ -210,10 +210,14 @@ SpellBound is a personal reading memory PWA. Pure static frontend (HTML/CSS/JS),
 | v73 | Numbers in hero messages now spelled out (`spellNum()` helper, covers 0–12) |
 | v74 | Spelled numbers capitalised when sentence-initial |
 | v75 | "Commitment is complicated" → "Commitment can sometimes be complicated" |
+| v76 | Added favicon: generated `icon-192.png` and `icon-512.png` from source PNG; added `<link rel="icon">` and `<link rel="apple-touch-icon">` to `index.html`; trimmed white padding and applied dark background (`#1a1a2e`) to icons |
+| v76 | Added header logo: generated `logo-header.png` (transparent background, green graphic) from source PNG; added `.app-title-group` wrapper with logo + title side by side; bumped SW cache to v76 |
+
+### Favicon & Header Logo (SW v76)
+- **Favicon**: generated `icon-192.png` and `icon-512.png` from source PNG (`SpellBound Favicon Green.png`) using `sharp`; trimmed white padding; applied dark background (`#1a1a2e`); added `<link rel="icon">` and `<link rel="apple-touch-icon">` to `index.html`. Icons appear on browser tabs, Android home screen (via manifest), and iOS home screen.
+- **Header logo**: generated `logo-header.png` with white background removed (transparent), green graphic only; added `.app-title-group` flex wrapper in header with logo to the left of the title text; logo sized at `44px` height via CSS.
 
 ---
-
-## Known Patterns / Conventions
 
 - **Toggle buttons** (medium, rating): JS click handlers on each button, `active` class toggled, `set*Btn(selector, value)` helper used to pre-fill forms
 - **Completion fields**: shown/hidden via `toggleCompletionFields()` based on status === 'Completed'
