@@ -1,4 +1,4 @@
-const CACHE_NAME = 'spellbound-v91';
+const CACHE_NAME = 'spellbound-v92';
 const ASSETS = [
   '/',
   '/index.html',
