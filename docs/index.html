@@ -166,11 +166,25 @@
     <!-- Wishlist View -->
     <div id="wishlist-view" class="view hidden">
       <div id="wishlist-main">
-        <div class="books-toolbar fnr-toolbar">
-          <button class="fab-inline" onclick="showAddWishlistForm()">+ Add to Wishlist</button>
-          <button class="fnr-entry-btn" onclick="openFindNextRead()"><i class="ph-bold ph-magic-wand"></i> Find Your Next Read</button>
+
+        <!-- Zone 1: Find Your Next Read card -->
+        <div class="fnr-zone-card" onclick="openFindNextRead()">
+          <div class="fnr-zone-text">
+            <span class="fnr-zone-title"><i class="ph-bold ph-magic-wand"></i> Find Your Next Read</span>
+            <span class="fnr-zone-sub">Tell us what you're in the mood for — we'll suggest what to read next.</span>
+          </div>
+          <i class="ph-bold ph-arrow-right fnr-zone-arrow"></i>
         </div>
-        <div id="wishlist-list"></div>
+
+        <!-- Zone 2: Wishlist section -->
+        <div class="wishlist-section">
+          <div class="wishlist-section-header">
+            <span class="wishlist-section-label">Your Wishlist</span>
+            <button class="wishlist-add-icon-btn" onclick="showAddWishlistForm()"><i class="ph-bold ph-plus"></i></button>
+          </div>
+          <div id="wishlist-list"></div>
+        </div>
+
       </div>
 
       <div id="fnr-content" style="display:none">
@@ -203,6 +217,7 @@
           <!-- Prompt 3: Book -->
           <div class="fnr-prompt">
             <p class="fnr-prompt-label">Want to relive how a book left you feeling?</p>
+            <p class="fnr-support-text">A book that matches the mood you're chasing today.</p>
             <p class="fnr-prompt-sublabel">Book</p>
             <div class="fnr-autocomplete-wrap">
               <input type="text" id="fnr-book-search" class="fnr-text-input" placeholder="Start typing a title or author…" oninput="fnrDebouncedBookSearch()" autocomplete="off">
@@ -216,7 +231,7 @@
           <!-- Prompt 4: Author -->
           <div class="fnr-prompt">
             <p class="fnr-prompt-label">Have an author that could lift your spirits?</p>
-            <p class="fnr-support-text">Don't worry, we'll find ones similar to them too.</p>
+            <p class="fnr-support-text">Tell us about an author whose voice you're in the mood for, and we'll round up a few you might like just as much.</p>
             <p class="fnr-prompt-sublabel">Author</p>
             <div class="fnr-autocomplete-wrap">
               <input type="text" id="fnr-author-search" class="fnr-text-input" placeholder="Start typing a name…" oninput="fnrDebouncedAuthorSearch()" autocomplete="off">

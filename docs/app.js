@@ -1495,7 +1495,7 @@ function initializeForms() {
 async function loadWishlist() {
   const container = document.getElementById('wishlist-list');
   if (wishlist.length === 0) {
-    container.innerHTML = '<p class="home-empty">Nothing on your wishlist yet.</p>';
+    container.innerHTML = '<p class="home-empty">Nothing here yet. Add a book manually or use <em>Find Your Next Read</em> above.</p>';
     return;
   }
 

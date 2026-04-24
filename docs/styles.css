@@ -2002,28 +2002,92 @@ main { min-height: 100%; }
 }
 
 /* ─── FIND YOUR NEXT READ ────────────────────────────────────────────────────── */
-.fnr-toolbar {
-  display: flex;
-  gap: 8px;
-}
-.fnr-entry-btn {
-  flex: 1;
-  background: var(--surface);
-  color: var(--accent2);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 8px;
-  padding: 8px 14px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
+
+/* Zone 1: FNR entry card */
+.fnr-zone-card {
   display: flex;
   align-items: center;
-  gap: 6px;
-  justify-content: center;
-  white-space: nowrap;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 20px;
+  cursor: pointer;
   transition: background 0.15s;
 }
-.fnr-entry-btn:active { background: var(--surface2); }
+.fnr-zone-card:active { background: var(--surface2); }
+.fnr-zone-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fnr-zone-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.fnr-zone-sub {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.fnr-zone-arrow {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* Zone 2: Wishlist section */
+.wishlist-section {
+  background: var(--surface);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.wishlist-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.wishlist-section-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.wishlist-add-icon-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.wishlist-add-icon-btn:active { opacity: 0.85; }
+#wishlist-list .home-waitlist-item:last-child {
+  border-bottom: none;
+}
+/* Items inside the wishlist section card are rows, not individual cards */
+#wishlist-list .home-waitlist-item {
+  background: transparent;
+  border-radius: 0;
+  margin-bottom: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  padding: 12px 14px;
+}
 
 /* Header */
 .fnr-header {
