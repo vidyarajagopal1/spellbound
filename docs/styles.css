@@ -482,7 +482,7 @@ main { min-height: 100%; }
   gap: 8px;
 }
 .books-group-heading.accent-reading    { color: #9c6fda; }
-.books-group-heading.accent-waitlisted { color: #9c6fda; }
+.books-group-heading.accent-queued-up { color: #9c6fda; }
 .books-group-heading.accent-paused     { color: #9c6fda; }
 .books-group-heading.accent-completed  { color: #9c6fda; }
 .books-group-count {
@@ -671,7 +671,7 @@ main { min-height: 100%; }
 .book-status-reading    { background: #1e5c1e; color: #a8ffa8; }
 .book-status-completed  { background: #1a3a6e; color: #a8c8ff; }
 .book-status-paused     { background: #5c3a00; color: #ffcc80; }
-.book-status-waitlisted { background: #3a1a5c; color: #d4a8ff; }
+.book-status-queued-up { background: #3a1a5c; color: #d4a8ff; }
 .book-pill-category     { background: rgba(255,255,255,0.1); color: var(--text-muted); }
 .book-pill-medium       { background: rgba(255,255,255,0.1); color: var(--text); }
 .book-pill-rating       { background: rgba(255,255,255,0.08); color: var(--text); }
@@ -1137,6 +1137,15 @@ main { min-height: 100%; }
 .form select:focus {
   outline: none;
   border-color: var(--accent2);
+}
+.category-hint {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: -0.25rem;
+  margin-bottom: 0.5rem;
+  min-height: 1em;
 }
 .form button[type="submit"] {
   background: var(--accent);

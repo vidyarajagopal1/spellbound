@@ -306,11 +306,11 @@ function formatDate(date) {
 }
 
 const COVER_COLORS = {
-  'Fiction':        '#C47A90',  /* warm rose-pink    */
-  'History':        '#C4A96A',  /* warm sand         */
-  'Politics':       '#6B9CB8',  /* muted sky blue    */
-  'Philosophy':     '#9B8AB8',  /* pale lavender     */
-  'Graphic Novels': '#78A882'   /* sage green        */
+  'Escape':         '#C47A90',  /* warm rose-pink    */
+  'Understand':     '#C4A96A',  /* warm sand         */
+  'Reflect':        '#9B8AB8',  /* pale lavender     */
+  'Evolve':         '#78A882',  /* sage green        */
+  'Question':       '#6B9CB8'   /* muted sky blue    */
 };
 function getCoverColor(cat) { return COVER_COLORS[cat] || '#7A8FA6'; }
 
@@ -436,7 +436,7 @@ function spellNum(n) { return SPELL[n] ?? n; }
 
 async function loadHome() {
   const readingBooks    = books.filter(b => b.status === 'Reading');
-  const waitlistedBooks = books.filter(b => b.status === 'Waitlisted');
+  const waitlistedBooks = books.filter(b => b.status === 'Queued Up');
 
   const hour     = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -492,7 +492,7 @@ async function loadHome() {
   ];
 
   const waitlistContainer = document.getElementById('waitlisted-books');
-  waitlistContainer.innerHTML = '<h2 class="home-section-title">Waitlisted</h2>';
+  waitlistContainer.innerHTML = '<h2 class="home-section-title">Queued Up</h2>';
   if (ordered.length === 0) {
     waitlistContainer.innerHTML += '<p class="home-empty">Nothing waiting.</p>';
   } else {
@@ -621,8 +621,8 @@ function setStatusFilter(value) {
 function loadBooks() {
   const query          = (document.getElementById('books-search')?.value || '').trim().toLowerCase();
   const statusFilter   = document.getElementById('books-status-filter').value;
-  const STATUS_ORDER   = ['Reading', 'Completed', 'Paused', 'Waitlisted'];
-  const CATEGORY_ORDER = ['Fiction', 'History', 'Politics', 'Philosophy', 'Graphic Novels'];
+  const STATUS_ORDER   = ['Reading', 'Completed', 'Paused', 'Queued Up'];
+  const CATEGORY_ORDER = ['Escape', 'Understand', 'Reflect', 'Evolve', 'Question'];
 
   let filtered = books;
   if (query) {
@@ -742,11 +742,11 @@ function openBook(id) {
 
 // ─── GOOGLE BOOKS LOOKUP ─────────────────────────────────────────────────────
 const CATEGORY_MAP = [
-  [/graphic|comic|manga/i,          'Graphic Novels'],
-  [/histor/i,                        'History'],
-  [/politic|government/i,            'Politics'],
-  [/philosoph/i,                     'Philosophy'],
-  [/fiction/i,                       'Fiction'],
+  [/graphic|comic|manga|fiction|novel|narrative/i,        'Escape'],
+  [/histor|politic|government|scien|cultur|current/i,     'Understand'],
+  [/philosoph|psycholog|memoir|biography|inner/i,         'Reflect'],
+  [/self.help|habit|skill|productivity|applied/i,         'Evolve'],
+  [/essay|critic|disrupt|polemic|think/i,                 'Question'],
 ];
 
 function mapCategory(googleCats) {
@@ -883,12 +883,24 @@ function showAddBookForm() {
   toggleAddBookFields();
 }
 
+const CATEGORY_HINTS = {
+  'Escape':     'Fiction, graphic novels, narrative-driven reads',
+  'Understand': 'History, politics, science, culture',
+  'Reflect':    'Philosophy, psychology, memoir, inner life',
+  'Evolve':     'Self-development, habits, skills, applied thinking',
+  'Question':   'Essays, critical thinking, disruptive ideas',
+};
+
+function updateCategoryHint(selectId, hintId) {
+  const val  = document.getElementById(selectId)?.value;
+  const hint = document.getElementById(hintId);
+  if (hint) hint.textContent = CATEGORY_HINTS[val] || '';
+}
+
 function toggleAddBookFields() {
-  const status   = document.getElementById('book-status-input').value;
-  const category = document.getElementById('book-category-input').value;
+  const status = document.getElementById('book-status-input').value;
   document.getElementById('add-book-completion-fields').style.display = status === 'Completed' ? 'block' : 'none';
-  const showFav = category === 'Fiction' || category === 'Graphic Novels';
-  document.getElementById('add-book-fav-char-field').style.display = showFav ? 'block' : 'none';
+  updateCategoryHint('book-category-input', 'add-book-category-hint');
 }
 
 async function addBook(event) {
@@ -904,16 +916,14 @@ async function addBook(event) {
     dateCompleted:      document.getElementById('book-date-completed-input').value,
     notes:              document.getElementById('book-notes-input').value,
     aftertaste:         document.getElementById('book-aftertaste-input').value,
-    favouriteCharacter: document.getElementById('book-fav-char-input').value,
     updatedAt:          new Date().toISOString(),
   };
   await dbPut('books', book);
   hideForm();
-  ['book-title-input','book-author-input','book-notes-input','book-aftertaste-input','book-fav-char-input','book-date-completed-input'].forEach(id => document.getElementById(id).value = '');
+  ['book-title-input','book-author-input','book-notes-input','book-aftertaste-input','book-date-completed-input'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('book-status-input').value   = 'Reading';
-  document.getElementById('book-category-input').value = 'Fiction';
+  document.getElementById('book-category-input').value = 'Escape';
   document.getElementById('add-book-completion-fields').style.display = 'none';
-  document.getElementById('add-book-fav-char-field').style.display    = 'none';
   setMediumBtn('#add-book-medium-group', '');
   setRatingBtn('#add-book-rating-group', '');
   await saveAndSync();
@@ -931,7 +941,6 @@ function showEditBookForm() {
   document.getElementById('edit-book-category').value       = book.category;
   document.getElementById('edit-book-notes').value          = book.notes || '';
   document.getElementById('edit-book-aftertaste').value     = book.aftertaste || '';
-  document.getElementById('edit-book-fav-char').value       = book.favouriteCharacter || '';
   document.getElementById('edit-book-date-completed').value = book.dateCompleted || '';
   setMediumBtn('#edit-book-medium-group', book.medium || '');
   setRatingBtn('#edit-book-rating-group', book.rating || '');
@@ -941,11 +950,9 @@ function showEditBookForm() {
 }
 
 function toggleCompletionFields() {
-  const status   = document.getElementById('edit-book-status').value;
-  const category = document.getElementById('edit-book-category').value;
+  const status = document.getElementById('edit-book-status').value;
   document.getElementById('completion-fields').style.display = status === 'Completed' ? 'block' : 'none';
-  const showFav = category === 'Fiction' || category === 'Graphic Novels';
-  document.getElementById('edit-book-fav-char-field').style.display = showFav ? 'block' : 'none';
+  updateCategoryHint('edit-book-category', 'edit-book-category-hint');
 }
 
 async function updateBook(event) {
@@ -960,7 +967,6 @@ async function updateBook(event) {
     medium:             document.querySelector('#edit-book-medium-group .medium-btn.active')?.dataset.value || '',
     notes:              document.getElementById('edit-book-notes').value,
     aftertaste:         document.getElementById('edit-book-aftertaste').value,
-    favouriteCharacter: document.getElementById('edit-book-fav-char').value,
     dateCompleted:      document.getElementById('edit-book-date-completed').value,
     updatedAt:          new Date().toISOString(),
   };
@@ -1521,7 +1527,7 @@ async function loadWishlist() {
       </div>
       <div class="wishlist-status-prompt hidden" id="wishlist-prompt-${w.id}">
         <span class="wishlist-prompt-label">Add as:</span>
-        <button class="wishlist-status-btn" onclick="moveToBooks(${w.id}, 'Waitlisted')">Waitlisted</button>
+        <button class="wishlist-status-btn" onclick="moveToBooks(${w.id}, 'Queued Up')">Queued Up</button>
         <button class="wishlist-status-btn" onclick="moveToBooks(${w.id}, 'Reading')">Reading</button>
         <button class="wishlist-cancel-btn" onclick="hideMoveToBooks(${w.id})">Cancel</button>
       </div>
@@ -1699,13 +1705,13 @@ async function processKindleImport(clippings) {
 }
 
 function showCategoryModal(stubs) {
-  const CATEGORIES = ['Fiction', 'History', 'Politics', 'Philosophy', 'Non-Fiction', 'Graphic Novels'];
+  const CATEGORIES = ['Escape', 'Understand', 'Reflect', 'Evolve', 'Question'];
   document.getElementById('category-modal-books').innerHTML = stubs.map((s, i) =>
     `<div class="modal-book-row">
       <div class="modal-book-title">${s.title}</div>
       ${s.author ? `<div class="modal-book-author">${s.author}</div>` : ''}
       <select class="modal-category-select" data-index="${i}">
-        ${CATEGORIES.map(c => `<option value="${c}"${c === 'Non-Fiction' ? ' selected' : ''}>${c}</option>`).join('')}
+        ${CATEGORIES.map(c => `<option value="${c}"${c === 'Understand' ? ' selected' : ''}>${c}</option>`).join('')}
       </select>
     </div>`
   ).join('');

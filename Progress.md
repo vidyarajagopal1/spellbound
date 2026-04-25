@@ -503,3 +503,49 @@ Replace calls pass currently-displayed titles to avoid near-duplicates.
 | v89 | Books tab UX refinements: category pill stacking, heading cleanup, font consistency |
 | v90 | Find Your Next Read AI feature; Wishlist two-zone layout; Books tab elevated redesign; Essay tab typography alignment |
 | v91 | Books tab: titles sorted alphabetically within each category sub-group (`localeCompare`) |
+| v92–v95 | Category rename + status rename; service worker no-cache header for local dev |
+
+---
+
+## Category Redesign (v92–v95)
+
+### New Categories
+Replaced the 5 original categories with 5 intent-based categories:
+
+| Category | Replaces | Subtitle (hint text) | Colour |
+|---|---|---|---|
+| **Escape** | Fiction + Graphic Novels | Fiction, graphic novels, narrative-driven reads | `#C47A90` rose-pink |
+| **Understand** | History + Politics + Science | History, politics, science, culture | `#C4A96A` warm sand |
+| **Reflect** | Philosophy + Memoir | Philosophy, psychology, memoir, inner life | `#9B8AB8` pale lavender |
+| **Evolve** | Self-help + Non-fiction | Self-development, habits, skills, applied thinking | `#78A882` sage green |
+| **Question** | Essays + Critical thinking | Essays, critical thinking, disruptive ideas | `#6B9CB8` muted sky blue |
+
+- Same 5 hex values as before, reallocated to new names
+- `COVER_COLORS` keys updated in `app.js`
+- `CATEGORY_ORDER` updated for book list sort order
+- `CATEGORY_MAP` regexes broadened to map Open Library subjects to the new 5 categories
+- All 5 `<select>` dropdowns updated in `index.html` (Add Book, Edit Book, Add Highlight inline, Edit Wishlist, Add Wishlist)
+- Kindle import category modal updated; default selection changed to `Understand`
+- No migration — existing books retain old category values and are re-categorised manually
+
+### Category Hint
+- A `<small class="category-hint">` element added directly below the Category `<select>` in **Add Book** and **Edit Book** forms
+- Updates dynamically via `updateCategoryHint(selectId, hintId)` on every `onchange` and on form open
+- `CATEGORY_HINTS` constant maps each category name to its subtitle string
+- CSS: `0.72rem`, muted, italic, `min-height: 1em` to avoid layout jump
+
+### Favourite Character Field Removed
+- Field removed from Add Book and Edit Book forms entirely (HTML + JS)
+- `toggleAddBookFields()` and `toggleCompletionFields()` no longer show/hide the field
+- `addBook()` and `updateBook()` no longer read or save `favouriteCharacter`
+- `showEditBookForm()` no longer pre-fills it
+
+### Status Rename: Waitlisted → Queued Up
+- All instances of `'Waitlisted'` as a stored status value updated to `'Queued Up'`
+- Updated in: `STATUS_ORDER`, home section title, wishlist "Add as" button, all `<select>` options, status pill filter, `books-status-filter` hidden select
+- CSS: `.book-status-waitlisted` → `.book-status-queued-up`; `.books-group-heading.accent-waitlisted` → `.accent-queued-up`
+- Existing books saved with `status: 'Waitlisted'` in IndexedDB lose colour match until re-saved via Edit Book
+
+### Service Worker Dev Fix
+- `server.js` updated: `sw.js` route added before `express.static`, returning `Cache-Control: no-store` header
+- Prevents the service worker from being cached by the browser during local development, so cache version bumps take effect without manual unregister

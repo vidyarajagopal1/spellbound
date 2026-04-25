@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=93">
+  <link rel="stylesheet" href="styles.css?v=95">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
@@ -55,7 +55,7 @@
         <div class="status-pills">
           <button class="status-pill active" onclick="setStatusFilter('')">All</button>
           <button class="status-pill" onclick="setStatusFilter('Reading')">Reading</button>
-          <button class="status-pill" onclick="setStatusFilter('Waitlisted')">Waitlisted</button>
+          <button class="status-pill" onclick="setStatusFilter('Queued Up')">Queued Up</button>
           <button class="status-pill" onclick="setStatusFilter('Paused')">Paused</button>
           <button class="status-pill" onclick="setStatusFilter('Completed')">Completed</button>
         </div>
@@ -64,7 +64,7 @@
           <option value="Reading">Reading</option>
           <option value="Completed">Completed</option>
           <option value="Paused">Paused</option>
-          <option value="Waitlisted">Waitlisted</option>
+          <option value="Queued Up">Queued Up</option>
         </select>
       </div>
       <div id="books-list"></div>
@@ -293,16 +293,17 @@
           <option value="Reading">Reading</option>
           <option value="Completed">Completed</option>
           <option value="Paused">Paused</option>
-          <option value="Waitlisted">Waitlisted</option>
+          <option value="Queued Up">Queued Up</option>
         </select>
         <label for="book-category-input">Category</label>
         <select id="book-category-input" required onchange="toggleAddBookFields(); markCategoryManual('add')">
-          <option value="Fiction">Fiction</option>
-          <option value="History">History</option>
-          <option value="Politics">Politics</option>
-          <option value="Philosophy">Philosophy</option>
-          <option value="Graphic Novels">Graphic Novels</option>
+          <option value="Escape">Escape</option>
+          <option value="Understand">Understand</option>
+          <option value="Reflect">Reflect</option>
+          <option value="Evolve">Evolve</option>
+          <option value="Question">Question</option>
         </select>
+        <small id="add-book-category-hint" class="category-hint"></small>
         <div id="add-book-completion-fields" style="display:none;">
           <label for="book-date-completed-input">Date Completed</label>
           <input type="date" id="book-date-completed-input">
@@ -317,10 +318,6 @@
           <textarea id="book-notes-input" placeholder="Notes"></textarea>
           <label for="book-aftertaste-input">Aftertaste</label>
           <textarea id="book-aftertaste-input" placeholder="Aftertaste"></textarea>
-        </div>
-        <div id="add-book-fav-char-field" style="display:none;">
-          <label for="book-fav-char-input">Favourite Character <span style="font-weight:normal;color:#888;">(optional)</span></label>
-          <input type="text" id="book-fav-char-input" placeholder="Favourite Character">
         </div>
         <label>Medium (if applicable)</label>
         <div class="medium-btn-group" id="add-book-medium-group">
@@ -347,16 +344,17 @@
           <option value="Reading">Reading</option>
           <option value="Completed">Completed</option>
           <option value="Paused">Paused</option>
-          <option value="Waitlisted">Waitlisted</option>
+          <option value="Queued Up">Queued Up</option>
         </select>
         <label for="edit-book-category">Category</label>
         <select id="edit-book-category" required onchange="toggleCompletionFields(); markCategoryManual('edit')">
-          <option value="Fiction">Fiction</option>
-          <option value="History">History</option>
-          <option value="Politics">Politics</option>
-          <option value="Philosophy">Philosophy</option>
-          <option value="Graphic Novels">Graphic Novels</option>
+          <option value="Escape">Escape</option>
+          <option value="Understand">Understand</option>
+          <option value="Reflect">Reflect</option>
+          <option value="Evolve">Evolve</option>
+          <option value="Question">Question</option>
         </select>
+        <small id="edit-book-category-hint" class="category-hint"></small>
         <div id="completion-fields" style="display:none;">
           <label for="edit-book-date-completed">Date Completed</label>
           <input type="date" id="edit-book-date-completed">
@@ -371,10 +369,6 @@
           <textarea id="edit-book-notes" placeholder="Notes"></textarea>
           <label for="edit-book-aftertaste">Aftertaste</label>
           <textarea id="edit-book-aftertaste" placeholder="Aftertaste"></textarea>
-        </div>
-        <div id="edit-book-fav-char-field" style="display:none;">
-          <label for="edit-book-fav-char">Favourite Character <span style="font-weight:normal;color:#888;">(optional)</span></label>
-          <input type="text" id="edit-book-fav-char" placeholder="Favourite Character">
         </div>
         <label>Medium (if applicable)</label>
         <div class="medium-btn-group" id="edit-book-medium-group">
@@ -418,15 +412,15 @@
             <label for="new-book-status">Status</label>
             <select id="new-book-status">
               <option value="Reading">Reading</option>
-              <option value="Waitlisted">Waitlisted</option>
+              <option value="Queued Up">Queued Up</option>
             </select>
             <label for="new-book-category">Category</label>
             <select id="new-book-category">
-              <option value="Fiction">Fiction</option>
-              <option value="History">History</option>
-              <option value="Politics">Politics</option>
-              <option value="Philosophy">Philosophy</option>
-              <option value="Graphic Novels">Graphic Novels</option>
+              <option value="Escape">Escape</option>
+              <option value="Understand">Understand</option>
+              <option value="Reflect">Reflect</option>
+              <option value="Evolve">Evolve</option>
+              <option value="Question">Question</option>
             </select>
           </div>
         </div>
@@ -503,11 +497,11 @@
         <input type="text" id="edit-wishlist-title" placeholder="Title" required>
         <label for="edit-wishlist-category">Category</label>
         <select id="edit-wishlist-category" required>
-          <option value="Fiction">Fiction</option>
-          <option value="History">History</option>
-          <option value="Politics">Politics</option>
-          <option value="Philosophy">Philosophy</option>
-          <option value="Graphic Novels">Graphic Novels</option>
+          <option value="Escape">Escape</option>
+          <option value="Understand">Understand</option>
+          <option value="Reflect">Reflect</option>
+          <option value="Evolve">Evolve</option>
+          <option value="Question">Question</option>
         </select>
         <label for="edit-wishlist-author">Author <span style="font-weight:normal;color:#888;">(optional)</span></label>
         <input type="text" id="edit-wishlist-author" placeholder="Author">
@@ -527,11 +521,11 @@
         <div id="wishlist-book-suggestions" class="book-suggestions hidden"></div>
         <label for="wishlist-category-input">Category</label>
         <select id="wishlist-category-input" required onchange="markCategoryManual('wishlist')">
-          <option value="Fiction">Fiction</option>
-          <option value="History">History</option>
-          <option value="Politics">Politics</option>
-          <option value="Philosophy">Philosophy</option>
-          <option value="Graphic Novels">Graphic Novels</option>
+          <option value="Escape">Escape</option>
+          <option value="Understand">Understand</option>
+          <option value="Reflect">Reflect</option>
+          <option value="Evolve">Evolve</option>
+          <option value="Question">Question</option>
         </select>
         <label for="wishlist-author-input">Author <span style="font-weight:normal;color:#888;">(optional)</span></label>
         <input type="text" id="wishlist-author-input" placeholder="Author">
@@ -619,7 +613,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="app.js?v=87"></script>
+  <script src="app.js?v=95"></script>
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 
