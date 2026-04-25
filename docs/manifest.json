@@ -2,7 +2,7 @@
   "name": "SpellBound",
   "short_name": "SpellBound",
   "description": "Your personal reading memory",
-  "start_url": "/",
+  "start_url": "/docs",
   "scope": "/",
   "display": "standalone",
   "background_color": "#1a1a2e",
