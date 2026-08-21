@@ -2898,6 +2898,28 @@ main { min-height: 100%; }
   border: 1px solid rgba(255,255,255,0.06);
   color: var(--text-muted);
 }
+.gr-import-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 2px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-style: italic;
+  flex-shrink: 0;
+}
+.gr-import-progress.hidden { display: none; }
+.gr-import-progress::before {
+  content: '';
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.15);
+  border-top-color: var(--accent2);
+  animation: gr-progress-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes gr-progress-spin { to { transform: rotate(360deg); } }
 .gr-confirm-skip-section .gr-confirm-list li.gr-confirm-more { border: none; }
 
 /* ─── RATING BUTTONS ─── */

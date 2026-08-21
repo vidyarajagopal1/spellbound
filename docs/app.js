@@ -543,6 +543,7 @@ function _showGrConfirmModal(toBooks, toWishlist, skipped) {
     if (withReview) {
       scrollParts.push(`<p class="gr-confirm-note">${withReview} of these include a review that will be saved as Notes.</p>`);
     }
+    scrollParts.push(`<p class="gr-confirm-note">Books will be sorted into categories automatically — you can change any of them afterwards.</p>`);
   }
 
   if (skipped.length) {
@@ -554,6 +555,8 @@ function _showGrConfirmModal(toBooks, toWishlist, skipped) {
   parts.push(`<div class="gr-confirm-scroll">${scrollParts.join('')}</div>`);
 
   body.innerHTML = parts.join('');
+  document.getElementById('gr-confirm-actions').classList.remove('hidden');
+  document.getElementById('gr-import-progress').classList.add('hidden');
   modalOverlay.classList.remove('hidden');
 }
 
@@ -562,13 +565,73 @@ function closeGrConfirmModal() {
   _grPendingImport = null;
 }
 
+// Categories the AI is allowed to assign during Goodreads import categorisation.
+const GR_CATEGORY_OPTIONS = ['Escape', 'Understand', 'Reflect', 'Evolve', 'Question'];
+
+// Sends title/author pairs to the AI in batches of 50 and assigns a `category`
+// to each item in place (mutates the objects in `items`). Matching AI responses
+// back to books is done by normalised title, tolerating batches that return
+// fewer, more, or unmatched entries. Any failure — missing API key, network
+// error, malformed JSON — simply leaves that batch uncategorised; it never
+// throws, so the import always completes.
+async function _grCategorizeBooks(items, progressEl) {
+  if (!items.length) return;
+
+  const CHUNK_SIZE = 50;
+  const chunks = [];
+  for (let i = 0; i < items.length; i += CHUNK_SIZE) chunks.push(items.slice(i, i + CHUNK_SIZE));
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    if (progressEl) {
+      progressEl.textContent = chunks.length > 1
+        ? `Sorting books into categories… (batch ${i + 1} of ${chunks.length})`
+        : 'Sorting books into categories…';
+      progressEl.classList.remove('hidden');
+    }
+
+    try {
+      const userMsg = JSON.stringify({
+        books: chunk.map(b => ({ title: b.title, author: b.author || '' }))
+      });
+      const raw     = await callAI(AI_PROMPTS.categorizeImport, [], userMsg);
+      const cleaned = raw.replace(/```json|```/g, '').trim();
+      const parsed  = JSON.parse(cleaned);
+      const list    = Array.isArray(parsed?.categories) ? parsed.categories : [];
+
+      const byTitle = new Map();
+      for (const entry of list) {
+        if (!entry || typeof entry.title !== 'string') continue;
+        const cat = entry.category;
+        if (cat === null || GR_CATEGORY_OPTIONS.includes(cat)) {
+          byTitle.set(_grNormalizeTitle(entry.title), cat);
+        }
+      }
+
+      for (const item of chunk) {
+        const cat = byTitle.get(_grNormalizeTitle(item.title));
+        if (cat) item.category = cat; // missing/null/unmatched entries are left with no category
+      }
+    } catch {
+      // No API key, network failure, or malformed JSON — this batch stays uncategorised.
+    }
+  }
+
+  if (progressEl) progressEl.classList.add('hidden');
+}
+
 async function confirmGoodreadsImport() {
   const pending = _grPendingImport;
   if (!pending) return;
+
+  const { toBooks, toWishlist } = pending;
+
+  document.getElementById('gr-confirm-actions').classList.add('hidden');
+  await _grCategorizeBooks([...toBooks, ...toWishlist], document.getElementById('gr-import-progress'));
+
   document.getElementById('gr-confirm-modal').classList.add('hidden');
   _grPendingImport = null;
 
-  const { toBooks, toWishlist } = pending;
   const now = new Date().toISOString();
 
   for (const b of toBooks) {
@@ -577,7 +640,7 @@ async function confirmGoodreadsImport() {
       title:        b.title,
       author:       b.author,
       status:       b.status,
-      category:     'Understand',
+      category:     b.category || '',
       medium:       '',
       rating:       '',
       notes:        b.review || '',
@@ -595,7 +658,7 @@ async function confirmGoodreadsImport() {
       id:       nextId(wishlist),
       title:    w.title,
       author:   w.author,
-      category: 'Understand',
+      category: w.category || '',
       note:     '',
     };
     wishlist.push(item);
@@ -2604,7 +2667,26 @@ RESPONSE FORMAT — return this exact JSON structure:
   ]
 }
 reading_feel: 2–3 short descriptive tags (e.g. "character-driven", "lyrical prose", "slow burn", "page-turner", "dark humour", "quietly devastating").
-effort_level: exactly one of "Easy", "Moderate", or "Dense".`
+effort_level: exactly one of "Easy", "Moderate", or "Dense".`,
+
+  categorizeImport: `You are categorising books for a personal reading library import.
+
+Assign each book exactly one of these five categories, using these definitions verbatim:
+
+Escape — read to be somewhere else. Plot, immersion, forgetting the day.
+Understand — read to learn how something works or what happened. History, reportage, explanation.
+Reflect — read to sit with something. Meaning-making, grief, the interior.
+Evolve — read to change something about yourself. Skill, habit, capability.
+Question — read to have a belief unsettled. Challenge, argument, doubt.
+
+These describe why a reader picks a book up, not its genre — do not categorise by genre alone. If you cannot confidently place a book in one of these five categories, return null for its category rather than guessing.
+
+You will receive a JSON object shaped: {"books": [{"title": "...", "author": "..."}, ...]}
+
+Return STRICT JSON only — no preamble, no commentary, no markdown code fences — in this exact shape:
+{"categories": [{"title": "<exact title as given>", "category": "Escape" | "Understand" | "Reflect" | "Evolve" | "Question" | null}]}
+
+Include exactly one entry per book you were given, using the title exactly as given in the input. Do not add books that weren't in the input.`
 
 };
 

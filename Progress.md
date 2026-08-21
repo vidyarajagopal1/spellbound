@@ -595,4 +595,18 @@ Replaced the category-sub-grouped row list with a visual **pile of books** — e
 | v96 | Books tab: pile/spine stack view replaces row list; `spineTransformOffset()`, `escapeHtml()` helpers; gold accent borders |
 | v97 | Realistic book lighting: highlight ridge gradient, side lighting gradient, deepened cast shadow, cream pages edge |
 | v98 | Category key: sticky shelf-divider tabs; category filter AND'd with status pill; sticky toolbar |
+| v99 | Goodreads import: AI categorisation of imported books/wishlist items before write |
+
+---
+
+## Goodreads Import — AI Categorisation (v99)
+
+Books and wishlist items pulled in from a Goodreads CSV import are now categorised automatically by AI before being written to IndexedDB, instead of always defaulting to `Understand`.
+
+- New `AI_PROMPTS.categorizeImport` system prompt gives the AI the five category definitions verbatim (Escape / Understand / Reflect / Evolve / Question), states explicitly that they describe *why* a reader picks up a book rather than genre, and instructs it to return `null` for any book it can't confidently place rather than guessing
+- `_grCategorizeBooks(items, progressEl)` batches title/author pairs in chunks of 50 per request, requests strict JSON (`{"categories": [{title, category}]}`), strips markdown fences defensively, and matches responses back to books by normalised title — tolerant of batches that return missing, extra, or unmatched entries
+- Runs after the user clicks **Import** in the confirmation modal but before anything is written to IndexedDB; the modal's Import/Cancel buttons hide and a progress line (`#gr-import-progress`) shows "Sorting books into categories… (batch X of Y)" while it runs
+- **Fails safe**: no API key, network error, or malformed JSON leaves that batch's books with no category (`''`) — the import always completes and writes every book/wishlist item regardless of AI outcome
+- Confirmation modal copy updated: notes that books will be sorted into categories automatically and can be changed afterwards
+- `books` and `wishlist` category fields now default to `''` (was hard-coded `'Understand'`) when categorisation doesn't resolve — uncategorised books render with the existing neutral fallback colour/style already used elsewhere for unknown categories
 
