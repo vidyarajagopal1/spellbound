@@ -501,31 +501,59 @@ function _showGrConfirmModal(toBooks, toWishlist, skipped) {
   const modalOverlay = document.getElementById('gr-confirm-modal');
   const body         = document.getElementById('gr-confirm-body');
 
-  const lines = [];
-  if (toBooks.length) {
-    const withReview = toBooks.filter(b => b.review).length;
-    lines.push(`<p class="gr-confirm-line"><strong>${toBooks.length}</strong> book${toBooks.length !== 1 ? 's' : ''} will be added to your library:</p>`);
-    lines.push(`<ul class="gr-confirm-list">${toBooks.slice(0, 10).map(b =>
-      `<li>${escapeHtml(b.title)}${b.author ? ` <span class="gr-confirm-author">— ${escapeHtml(b.author)}</span>` : ''} <span class="gr-confirm-status">(${escapeHtml(b.status)})</span></li>`
-    ).join('')}${toBooks.length > 10 ? `<li>…and ${toBooks.length - 10} more</li>` : ''}</ul>`);
+  const addedCount = toBooks.length + toWishlist.length;
+  const withReview = toBooks.filter(b => b.review).length;
+
+  const renderList = (items, max, renderItem) => {
+    const shown = items.slice(0, max);
+    const rest  = items.length - shown.length;
+    return `<ul class="gr-confirm-list">${shown.map(renderItem).join('')}${rest > 0 ? `<li class="gr-confirm-more">…and ${rest} more</li>` : ''}</ul>`;
+  };
+
+  const parts = [];
+
+  // Summary stats — large numbers with short labels
+  parts.push(`
+    <div class="gr-confirm-stats">
+      <div class="gr-confirm-stat">
+        <span class="gr-confirm-stat-num">${addedCount}</span>
+        <span class="gr-confirm-stat-label">To add</span>
+      </div>
+      <div class="gr-confirm-stat gr-confirm-stat-skip">
+        <span class="gr-confirm-stat-num">${skipped.length}</span>
+        <span class="gr-confirm-stat-label">Skipped</span>
+      </div>
+    </div>`);
+
+  const scrollParts = [];
+
+  if (addedCount) {
+    scrollParts.push(`<h4 class="gr-confirm-section-heading">Adding to your library</h4>`);
+    if (toBooks.length) {
+      scrollParts.push(renderList(toBooks, 5, b =>
+        `<li>${escapeHtml(b.title)}${b.author ? ` <span class="gr-confirm-author">— ${escapeHtml(b.author)}</span>` : ''} <span class="gr-confirm-status">(${escapeHtml(b.status)})</span></li>`
+      ));
+    }
+    if (toWishlist.length) {
+      if (toBooks.length) scrollParts.push(`<p class="gr-confirm-subheading">Wishlist (to-read)</p>`);
+      scrollParts.push(renderList(toWishlist, 5, w =>
+        `<li>${escapeHtml(w.title)}${w.author ? ` <span class="gr-confirm-author">— ${escapeHtml(w.author)}</span>` : ''}</li>`
+      ));
+    }
     if (withReview) {
-      lines.push(`<p class="gr-confirm-line">${withReview} of these include a review that will be saved as Notes.</p>`);
+      scrollParts.push(`<p class="gr-confirm-note">${withReview} of these include a review that will be saved as Notes.</p>`);
     }
   }
-  if (toWishlist.length) {
-    lines.push(`<p class="gr-confirm-line"><strong>${toWishlist.length}</strong> book${toWishlist.length !== 1 ? 's' : ''} will be added to your Wishlist (to-read):</p>`);
-    lines.push(`<ul class="gr-confirm-list">${toWishlist.slice(0, 5).map(w =>
-      `<li>${escapeHtml(w.title)}${w.author ? ` <span class="gr-confirm-author">— ${escapeHtml(w.author)}</span>` : ''}</li>`
-    ).join('')}${toWishlist.length > 5 ? `<li>…and ${toWishlist.length - 5} more</li>` : ''}</ul>`);
-  }
+
   if (skipped.length) {
-    lines.push(`<p class="gr-confirm-line gr-confirm-skip"><strong>${skipped.length}</strong> duplicate${skipped.length !== 1 ? 's' : ''} skipped (title already in your library):</p>`);
-    lines.push(`<ul class="gr-confirm-list">${skipped.slice(0, 10).map(t =>
-      `<li>${escapeHtml(t)}</li>`
-    ).join('')}${skipped.length > 10 ? `<li>…and ${skipped.length - 10} more</li>` : ''}</ul>`);
+    scrollParts.push(`<hr class="gr-confirm-divider">`);
+    scrollParts.push(`<h4 class="gr-confirm-section-heading">Skipped — already in your library</h4>`);
+    scrollParts.push(`<div class="gr-confirm-skip-section">${renderList(skipped, 5, t => `<li>${escapeHtml(t)}</li>`)}</div>`);
   }
 
-  body.innerHTML = lines.join('');
+  parts.push(`<div class="gr-confirm-scroll">${scrollParts.join('')}</div>`);
+
+  body.innerHTML = parts.join('');
   modalOverlay.classList.remove('hidden');
 }
 

@@ -2774,7 +2774,7 @@ main { min-height: 100%; }
   font-size: 0.82rem;
   width: 100%;
 }
-.modal-actions { display: flex; gap: 10px; margin-top: 4px; }
+.modal-actions { display: flex; gap: 10px; margin-top: 4px; flex-shrink: 0; }
 .modal-confirm-btn {
   flex: 1;
   background: var(--accent);
@@ -2785,6 +2785,10 @@ main { min-height: 100%; }
   font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .modal-cancel-btn {
   background: none;
@@ -2794,7 +2798,107 @@ main { min-height: 100%; }
   padding: 12px 16px;
   font-size: 0.88rem;
   cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+
+/* ─── GOODREADS IMPORT CONFIRMATION ──────────────────────────────────────────── */
+.gr-confirm-stats {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.gr-confirm-stat {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.gr-confirm-stat-num {
+  font-size: 1.7rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent2);
+}
+.gr-confirm-stat-skip .gr-confirm-stat-num { color: var(--text-muted); }
+.gr-confirm-stat-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.gr-confirm-scroll {
+  max-height: 42vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.gr-confirm-section-heading {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text);
+  margin: 14px 0 8px;
+}
+.gr-confirm-section-heading:first-child { margin-top: 0; }
+.gr-confirm-subheading {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 10px 0 6px;
+}
+.gr-confirm-divider {
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  margin: 16px 0;
+}
+.gr-confirm-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gr-confirm-list li {
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.gr-confirm-list li.gr-confirm-more {
+  background: none;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 4px 10px;
+}
+.gr-confirm-author {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.gr-confirm-status {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+.gr-confirm-note {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+.gr-confirm-skip-section .gr-confirm-list li {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.06);
+  color: var(--text-muted);
+}
+.gr-confirm-skip-section .gr-confirm-list li.gr-confirm-more { border: none; }
 
 /* ─── RATING BUTTONS ─── */
 .rating-btn-group {
