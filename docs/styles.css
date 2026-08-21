@@ -2092,8 +2092,55 @@ main { min-height: 100%; }
   cursor: pointer;
   margin-top: 0.25rem;
   transition: opacity 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  box-sizing: border-box;
+  max-width: 100%;
 }
 .settings-save-btn:active { opacity: 0.8; }
+.settings-btn-outline {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s, border-color 0.15s, color 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+.settings-btn-outline:active {
+  opacity: 0.7;
+  border-color: rgba(255,255,255,0.28);
+  color: var(--text);
+}
+.settings-action-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.settings-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+.settings-action-desc {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin: 0;
+}
 .settings-save-msg {
   margin-top: 0.6rem;
   font-size: 0.82rem;

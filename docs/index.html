@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=100">
+  <link rel="stylesheet" href="styles.css?v=101">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
@@ -576,19 +576,22 @@
 
         <section class="settings-section">
           <h3 class="settings-section-title">Data</h3>
-          <p class="settings-section-desc">Download a full backup of your library — books, highlights, essays, wishlist, challenges, and drafts — as a JSON file.</p>
-          <button class="settings-save-btn" onclick="exportLibrary()"><i class="ph-bold ph-export"></i> Export my library</button>
-          <p class="settings-section-desc" style="margin-top:1rem">Import books from a Goodreads CSV export. Duplicates (matched by title and author) are skipped automatically.</p>
-          <input type="file" id="goodreads-file-input" accept=".csv" style="display:none" onchange="handleGoodreadsFile(event)">
-          <button class="settings-save-btn" onclick="importGoodreads()"><i class="ph-bold ph-download-simple"></i> Import from Goodreads</button>
-
-          <p class="settings-section-desc" style="margin-top:1rem">One-off fix for the batch of books imported from Goodreads before AI categorisation existed. Clears their category and tags them with source "goodreads" so they can be re-sorted below.</p>
-          <button class="settings-save-btn" onclick="cleanupGoodreadsImportCategories()"><i class="ph-bold ph-eraser"></i> Clear categories on original Goodreads import</button>
-          <p id="settings-cleanup-progress" class="gr-import-progress hidden"></p>
-
-          <p class="settings-section-desc" style="margin-top:1rem">Use AI to assign a category to any book that currently has none. Books that already have a category are left untouched.</p>
-          <button class="settings-save-btn" onclick="reSortCategoriesWithAI()"><i class="ph-bold ph-sparkle"></i> Re-sort categories with AI</button>
-          <p id="settings-resort-progress" class="gr-import-progress hidden"></p>
+          <div class="settings-action-group">
+            <div class="settings-action">
+              <button class="settings-save-btn" onclick="exportLibrary()"><i class="ph-bold ph-export"></i> Export my library</button>
+              <p class="settings-action-desc">Download everything as a JSON file.</p>
+            </div>
+            <div class="settings-action">
+              <input type="file" id="goodreads-file-input" accept=".csv" style="display:none" onchange="handleGoodreadsFile(event)">
+              <button class="settings-btn-outline" onclick="importGoodreads()"><i class="ph-bold ph-download-simple"></i> Import from Goodreads</button>
+              <p class="settings-action-desc">Bring in books from a Goodreads CSV export.</p>
+            </div>
+            <div class="settings-action">
+              <button class="settings-btn-outline" onclick="reSortCategoriesWithAI()"><i class="ph-bold ph-sparkle"></i> Re-sort categories with AI</button>
+              <p class="settings-action-desc">Assign categories to books that don't have one.</p>
+              <p id="settings-resort-progress" class="gr-import-progress hidden"></p>
+            </div>
+          </div>
         </section>
       </div>
     </div>
@@ -651,7 +654,7 @@
   <script src="purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="app.js?v=100"></script>
+  <script src="app.js?v=101"></script>
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 

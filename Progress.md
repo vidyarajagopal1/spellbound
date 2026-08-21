@@ -597,6 +597,7 @@ Replaced the category-sub-grouped row list with a visual **pile of books** — e
 | v98 | Category key: sticky shelf-divider tabs; category filter AND'd with status pill; sticky toolbar |
 | v99 | Goodreads import: AI categorisation of imported books/wishlist items before write |
 | v100 | `source` field on new book records; Settings cleanup tool for legacy Goodreads import categories; "Re-sort categories with AI" for uncategorised books |
+| v101 | Settings Data section restyle: removed one-off cleanup button, outlined secondary actions, tightened copy and spacing |
 
 ---
 
@@ -620,4 +621,10 @@ Books and wishlist items pulled in from a Goodreads CSV import are now categoris
   - `moveToBooks()` (wishlist → book promotion) → carries over the wishlist item's `source` as-is (wishlist itself has no `source` field and is left untouched)
 - **Settings → Data → "Clear categories on original Goodreads import"**: one-off fix for the batch of 62 books written before AI categorisation existed. Matches strictly on the exact shared `updatedAt` timestamp (`2026-08-21T14:04:36.881Z`) that batch was written with — no other criteria. Refuses to run and reports the count instead if it isn't exactly 62. On confirm, clears `category` and sets `source: 'goodreads'` on each match.
 - **Settings → Data → "Re-sort categories with AI"**: reuses `_grCategorizeBooks()` over every book currently missing a category; never touches books that already have one. Confirmation shows the affected count; progress line shows while the AI call runs; final alert reports how many were successfully categorised.
+
+### Settings Data Section Restyle (v101)
+- **"Clear categories on original Goodreads import"** button removed entirely (one-off repair, now complete) — `cleanupGoodreadsImportCategories()` remains in `app.js` but is no longer exposed in the UI
+- **Visual hierarchy**: only "Export my library" keeps the filled pink `.settings-save-btn` treatment; "Import from Goodreads" and "Re-sort categories with AI" switched to a new `.settings-btn-outline` style — transparent background, thin border, muted text, same padding/border-radius/min-height as the filled button
+- **Copy shortened**: each action now has one short line of muted text below the button (`.settings-action-desc`) instead of a paragraph above it
+- **Grouped layout**: `.settings-action-group` / `.settings-action` wrapper tightens spacing between the three actions so they read as one group; both button styles guarantee a 44px minimum tap target and cap at 100% width to avoid overflow at narrow viewports
 
