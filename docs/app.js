@@ -358,6 +358,56 @@ function _grShelfToStatus(shelf) {
   return null; // to-read → wishlist
 }
 
+// Look up a value from a parsed CSV row by trying each candidate header name in turn.
+// Returns '' if none of the candidate columns exist in this export (never throws).
+function _grField(row, names) {
+  for (const name of names) {
+    if (row[name] !== undefined) return row[name];
+  }
+  return '';
+}
+
+// Parses a Goodreads date string into the app's YYYY-MM-DD format.
+// Accepts DD-MM-YYYY, YYYY/MM/DD, and YYYY-MM-DD (export format varies by account locale).
+// Returns '' if the input is empty or doesn't parse into a valid calendar date.
+function _grParseDate(str) {
+  const s = (str || '').trim();
+  if (!s) return '';
+
+  let y, m, d;
+  let match;
+  if ((match = s.match(/^(\d{4})-(\d{2})-(\d{2})$/))) {
+    [, y, m, d] = match;
+  } else if ((match = s.match(/^(\d{4})\/(\d{2})\/(\d{2})$/))) {
+    [, y, m, d] = match;
+  } else if ((match = s.match(/^(\d{2})-(\d{2})-(\d{4})$/))) {
+    [, d, m, y] = match;
+  } else {
+    return '';
+  }
+
+  y = parseInt(y, 10); m = parseInt(m, 10); d = parseInt(d, 10);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return '';
+
+  // Validate the date actually exists (e.g. rejects 31-02-2020) by round-tripping through Date.
+  const check = new Date(y, m - 1, d);
+  if (check.getFullYear() !== y || check.getMonth() !== m - 1 || check.getDate() !== d) return '';
+
+  const pad = n => String(n).padStart(2, '0');
+  return `${y}-${pad(m)}-${pad(d)}`;
+}
+
+// Normalises text for duplicate matching: straightens curly quotes/apostrophes,
+// collapses repeated whitespace, and lowercases.
+function _grNormalizeMatch(str) {
+  return (str || '')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 let _grPendingImport = null;
 
 function importGoodreads() {
@@ -376,21 +426,23 @@ async function handleGoodreadsFile(event) {
   const rows = _parseCSV(text);
   if (!rows.length) { alert('No data found in the CSV.'); return; }
 
-  // Build sets for duplicate detection (lowercase title+author)
-  const existingBooks    = new Set(books.map(b    => (b.title + '|' + (b.author || '')).toLowerCase()));
-  const existingWishlist = new Set(wishlist.map(w  => (w.title + '|' + (w.author || '')).toLowerCase()));
+  // Build sets for duplicate detection (normalised title+author)
+  const existingBooks    = new Set(books.map(b    => _grNormalizeMatch(b.title) + '|' + _grNormalizeMatch(b.author)));
+  const existingWishlist = new Set(wishlist.map(w  => _grNormalizeMatch(w.title) + '|' + _grNormalizeMatch(w.author)));
 
   const toBooks    = [];
   const toWishlist = [];
   const skipped    = [];
 
   for (const row of rows) {
-    const title   = row['Title']  || row['title']  || '';
-    const author   = row['Author'] || row['author'] || row['Author l-f'] || '';
-    const shelf    = row['Exclusive Shelf'] || row['exclusive_shelf'] || '';
-    const dateRead  = row['Date Read']  || row['date_read']  || '';
-    const dateAdded = row['Date Added'] || row['date_added'] || '';
-    const rawReview = row['My Review'] || row['my_review'] || '';
+    const title     = _grField(row, ['Title', 'title']);
+    const author    = _grField(row, ['Author', 'author', 'Author l-f']);
+    // Status comes from Exclusive Shelf only — the separate Bookshelves column can list
+    // multiple custom shelves and isn't a reliable source of reading status.
+    const shelf     = _grField(row, ['Exclusive Shelf', 'exclusive_shelf']);
+    const dateRead  = _grParseDate(_grField(row, ['Date Read', 'date_read']));
+    const dateAdded = _grParseDate(_grField(row, ['Date Added', 'date_added']));
+    const rawReview = _grField(row, ['My Review', 'my_review']);
     // Strip HTML tags (e.g. <br>, <br />) to plain line breaks; collapse multiples
     const review = rawReview
       .replace(/<br\s*\/?>/gi, '\n')
@@ -400,7 +452,7 @@ async function handleGoodreadsFile(event) {
 
     if (!title) continue;
 
-    const key    = (title + '|' + author).toLowerCase();
+    const key    = _grNormalizeMatch(title) + '|' + _grNormalizeMatch(author);
     const status = _grShelfToStatus(shelf);
 
     if (status === null) {
