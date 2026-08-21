@@ -598,6 +598,7 @@ Replaced the category-sub-grouped row list with a visual **pile of books** — e
 | v99 | Goodreads import: AI categorisation of imported books/wishlist items before write |
 | v100 | `source` field on new book records; Settings cleanup tool for legacy Goodreads import categories; "Re-sort categories with AI" for uncategorised books |
 | v101 | Settings Data section restyle: removed one-off cleanup button, outlined secondary actions, tightened copy and spacing |
+| v102 | Restored "Clear categories on original Goodreads import" button in Settings, styled to match the other outlined actions |
 
 ---
 
@@ -623,8 +624,12 @@ Books and wishlist items pulled in from a Goodreads CSV import are now categoris
 - **Settings → Data → "Re-sort categories with AI"**: reuses `_grCategorizeBooks()` over every book currently missing a category; never touches books that already have one. Confirmation shows the affected count; progress line shows while the AI call runs; final alert reports how many were successfully categorised.
 
 ### Settings Data Section Restyle (v101)
-- **"Clear categories on original Goodreads import"** button removed entirely (one-off repair, now complete) — `cleanupGoodreadsImportCategories()` remains in `app.js` but is no longer exposed in the UI
+- **"Clear categories on original Goodreads import"** button removed entirely (one-off repair, thought to be complete) — `cleanupGoodreadsImportCategories()` remained in `app.js` but was no longer exposed in the UI
 - **Visual hierarchy**: only "Export my library" keeps the filled pink `.settings-save-btn` treatment; "Import from Goodreads" and "Re-sort categories with AI" switched to a new `.settings-btn-outline` style — transparent background, thin border, muted text, same padding/border-radius/min-height as the filled button
 - **Copy shortened**: each action now has one short line of muted text below the button (`.settings-action-desc`) instead of a paragraph above it
 - **Grouped layout**: `.settings-action-group` / `.settings-action` wrapper tightens spacing between the three actions so they read as one group; both button styles guarantee a 44px minimum tap target and cap at 100% width to avoid overflow at narrow viewports
+
+### Clear Categories Button Restored (v102)
+- Re-added "Clear categories on original Goodreads import" to the Settings → Data section, between Import and Re-sort, styled with the same `.settings-btn-outline` treatment as the other secondary actions
+- Description shortened to one line: "One-off fix for the batch imported before AI categorisation existed."
 
