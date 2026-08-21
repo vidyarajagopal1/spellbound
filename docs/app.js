@@ -489,8 +489,8 @@ async function loadHome() {
           `<div class="book-cover" onclick="openBook(${b.id})" style="background-color:${getCoverColor(b.category)}">
             <div class="book-cover-spine"></div>
             <div class="book-cover-body">
-              <h3 class="book-cover-title">${b.title}</h3>
-              <p class="book-cover-category">${b.category}</p>
+              <h3 class="book-cover-title">${escapeHtml(b.title)}</h3>
+              <p class="book-cover-category">${escapeHtml(b.category)}</p>
             </div>
             ${getMediumIcon(b.medium) ? `<span class="book-cover-medium">${getMediumIcon(b.medium)}</span>` : ''}
             ${b.rating && RATING_LABELS[b.rating] ? `<span class="book-cover-rating">${RATING_LABELS[b.rating].icon}</span>` : ''}
@@ -519,9 +519,9 @@ async function loadHome() {
         <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
         <div class="home-waitlist-spine" style="background-color:${getCoverColor(b.category)}"></div>
         <div class="home-waitlist-info" onclick="openBook(${b.id})">
-          <span class="home-waitlist-title">${b.title}</span>
-          ${b.author ? `<span class="home-waitlist-author">${b.author}</span>` : ''}
-          <span class="home-waitlist-category">${b.category}</span>
+          <span class="home-waitlist-title">${escapeHtml(b.title)}</span>
+          ${b.author ? `<span class="home-waitlist-author">${escapeHtml(b.author)}</span>` : ''}
+          <span class="home-waitlist-category">${escapeHtml(b.category)}</span>
         </div>
       </div>`).join('');
     waitlistContainer.appendChild(listEl);
@@ -552,8 +552,8 @@ function renderStaleNudges(readingBooks) {
     const pct = ((idx + 0.5) / n * 100).toFixed(1);
     arrowStyle = `style="--arrow-left: calc(${pct}% - 6px)"`;
     message = pick([
-      `📚 If <em>${b.title}</em> were a library book, you'd owe a fine by now!`,
-      `📚 Still reading <em>${b.title}</em>? No judgment. Actually, maybe a little bit.`,
+      `📚 If <em>${escapeHtml(b.title)}</em> were a library book, you'd owe a fine by now!`,
+      `📚 Still reading <em>${escapeHtml(b.title)}</em>? No judgment. Actually, maybe a little bit.`,
     ]);
   } else {
     message = pick([
@@ -616,9 +616,9 @@ function openHighlightDetail(id) {
   document.getElementById('highlight-detail-content').innerHTML = `
     <div class="highlight-detail-card" style="border-left-color:${col}">
       <span class="highlight-detail-mark">&ldquo;</span>
-      <p class="highlight-detail-text">${h.text}</p>
-      <p class="highlight-detail-source">&mdash; ${book ? book.title : 'Unknown'}</p>
-      ${h.whyItStayed ? `<div class="highlight-detail-section"><span class="highlight-detail-label">Reflection</span><p class="highlight-detail-body">${h.whyItStayed}</p></div>` : ''}
+      <p class="highlight-detail-text">${escapeHtml(h.text)}</p>
+      <p class="highlight-detail-source">&mdash; ${book ? escapeHtml(book.title) : 'Unknown'}</p>
+      ${h.whyItStayed ? `<div class="highlight-detail-section"><span class="highlight-detail-label">Reflection</span><p class="highlight-detail-body">${escapeHtml(h.whyItStayed)}</p></div>` : ''}
       ${h.date ? `<div class="highlight-detail-section"><span class="highlight-detail-label">Date</span><p class="highlight-detail-body">${formatDate(h.date)}</p></div>` : ''}
     </div>`;
   document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
@@ -751,8 +751,8 @@ function openBook(id) {
     <div class="book-detail-header" style="border-left:6px solid ${color}">
       <div class="book-detail-header-top">
         <div>
-          <h2 class="book-detail-title">${book.title}</h2>
-          ${book.author ? `<p class="book-detail-author">${book.author}</p>` : ''}
+          <h2 class="book-detail-title">${escapeHtml(book.title)}</h2>
+          ${book.author ? `<p class="book-detail-author">${escapeHtml(book.author)}</p>` : ''}
           <div class="book-detail-pills">
             <span class="book-pill book-status-${book.status.replace(' ','-').toLowerCase()}">${book.status}</span>
             <span class="book-pill book-pill-category">${book.category}</span>
@@ -769,9 +769,9 @@ function openBook(id) {
 
   const metaItems = [];
   if (book.dateCompleted)      metaItems.push(`<div class="book-meta-item"><span class="book-meta-label">Date Completed</span><span>${formatDate(book.dateCompleted)}</span></div>`);
-  if (book.notes)              metaItems.push(`<div class="book-meta-item"><span class="book-meta-label">Notes</span><span>${book.notes}</span></div>`);
-  if (book.aftertaste)         metaItems.push(`<div class="book-meta-item"><span class="book-meta-label">Aftertaste</span><span>${book.aftertaste}</span></div>`);
-  if (book.favouriteCharacter) metaItems.push(`<div class="book-meta-item"><span class="book-meta-label">Favourite Character</span><span>${book.favouriteCharacter}</span></div>`);
+  if (book.notes)              metaItems.push(`<div class="book-meta-item"><span class="book-meta-label">Notes</span><span>${escapeHtml(book.notes)}</span></div>`);
+  if (book.aftertaste)         metaItems.push(`<div class="book-meta-item"><span class="book-meta-label">Aftertaste</span><span>${escapeHtml(book.aftertaste)}</span></div>`);
+  if (book.favouriteCharacter) metaItems.push(`<div class="book-meta-item"><span class="book-meta-label">Favourite Character</span><span>${escapeHtml(book.favouriteCharacter)}</span></div>`);
   document.getElementById('book-metadata').innerHTML   = metaItems.length ? `<div class="book-meta-grid">${metaItems.join('')}</div>` : '';
   document.getElementById('book-reflection').innerHTML = '';
 
@@ -781,8 +781,8 @@ function openBook(id) {
     : `<h3 class="book-highlights-heading">Highlights</h3>` + bookHighlights.map(h => `
       <div class="hl-quote-card" style="border-left-color:${color}">
         <span class="hl-quote-mark">&ldquo;</span>
-        <p class="hl-quote-text">${h.text}</p>
-        ${h.whyItStayed ? `<p class="hl-quote-why">${h.whyItStayed}</p>` : ''}
+        <p class="hl-quote-text">${escapeHtml(h.text)}</p>
+        ${h.whyItStayed ? `<p class="hl-quote-why">${escapeHtml(h.whyItStayed)}</p>` : ''}
         ${h.date ? `<p class="hl-quote-date">${formatDate(h.date)}</p>` : ''}
         <button onclick="showEditHighlightForm(${h.id}, event)" class="hl-edit" title="Edit">&#9998;</button>
         <button onclick="handleDeleteHighlight(${h.id}, event)" class="delete-btn hl-delete" title="Delete">&#128465;</button>
@@ -882,8 +882,8 @@ function renderBookSuggestions(items, form, sugEl) {
     return `<div class="book-suggestion-card" onclick="applyBookSuggestion(${i}, '${form}')">
       ${thumb ? `<img class="book-sug-thumb" src="${thumb}" alt="">` : `<div class="book-sug-thumb book-sug-thumb-placeholder"></div>`}
       <div class="book-sug-info">
-        <div class="book-sug-title">${title}</div>
-        ${author ? `<div class="book-sug-author">${author}</div>` : ''}
+        <div class="book-sug-title">${escapeHtml(title)}</div>
+        ${author ? `<div class="book-sug-author">${escapeHtml(author)}</div>` : ''}
         <div class="book-sug-category">${cat}</div>
       </div>
     </div>`;
@@ -1060,11 +1060,11 @@ function loadHighlights() {
     const book = books.find(b => b.id === h.bookId);
     const col  = book ? getCoverColor(book.category) : '#3a5a8c';
     return `<div class="home-quote-card" onclick="showEditHighlightForm(${h.id})" style="--card-accent:${col}">
-      <p class="home-quote-text">${h.text}</p>
-      <p class="home-quote-source">&mdash; ${book ? book.title : 'Unknown'}${book ? ` <span class="hl-quote-category-inline">${book.category}</span>` : ''}</p>
-      ${h.whyItStayed ? `<p class="hl-quote-why-inline">${h.whyItStayed}</p>` : ''}
+      <p class="home-quote-text">${escapeHtml(h.text)}</p>
+      <p class="home-quote-source">&mdash; ${book ? escapeHtml(book.title) : 'Unknown'}${book ? ` <span class="hl-quote-category-inline">${escapeHtml(book.category)}</span>` : ''}</p>
+      ${h.whyItStayed ? `<p class="hl-quote-why-inline">${escapeHtml(h.whyItStayed)}</p>` : ''}
       ${h.date ? `<p class="hl-quote-date-inline">${formatDate(h.date)}</p>` : ''}
-      ${h.location || h.kindleDate ? `<p class="hl-quote-date-inline">${[h.location, h.kindleDate].filter(Boolean).join(' &middot; ')}</p>` : ''}
+      ${h.location || h.kindleDate ? `<p class="hl-quote-date-inline">${[h.location, h.kindleDate].filter(Boolean).map(escapeHtml).join(' &middot; ')}</p>` : ''}
     </div>`;
   }).join('');
 }
@@ -1108,7 +1108,7 @@ function _populateBookSelect(filter) {
   // Update hidden select
   const select = document.getElementById('highlight-book-select');
   select.innerHTML = '<option value="" disabled selected></option>'
-    + filtered.map(b => `<option value="${b.id}">${b.title}</option>`).join('');
+    + filtered.map(b => `<option value="${b.id}">${escapeHtml(b.title)}</option>`).join('');
   // Update visible dropdown list
   const dropdown = document.getElementById('book-dropdown');
   if (filtered.length === 0) {
@@ -1116,7 +1116,7 @@ function _populateBookSelect(filter) {
   } else {
     dropdown.innerHTML = filtered.map(b =>
       `<div class="book-dropdown-item" onclick="selectBookFromDropdown(${b.id}, '${b.title.replace(/'/g, "&#39;")}')">` +
-      `${b.title}</div>`
+      `${escapeHtml(b.title)}</div>`
     ).join('');
   }
 }
@@ -1241,7 +1241,7 @@ async function loadEssays() {
       filterBar.innerHTML =
         `<button class="essay-tag-pill ${_essayTagFilter === '' ? 'active' : ''}" onclick="setEssayTagFilter('')">All</button>` +
         allTags.map(t =>
-          `<button class="essay-tag-pill ${_essayTagFilter === t ? 'active' : ''}" onclick="setEssayTagFilter(${JSON.stringify(t)})">${t}</button>`
+          `<button class="essay-tag-pill ${_essayTagFilter === t ? 'active' : ''}" onclick="setEssayTagFilter(${JSON.stringify(t)})">${escapeHtml(t)}</button>`
         ).join('');
     } else {
       filterBar.innerHTML = '';
@@ -1293,8 +1293,8 @@ async function loadEssays() {
   grid.innerHTML = visible.map(e =>
     `<div class="essay-card" onclick="openEssay(${e.id})">
       <div class="essay-card-body">
-        <h3 class="essay-card-title">${e.title}</h3>
-        ${e.subtitle ? `<p class="essay-card-subtitle">${e.subtitle}</p>` : ''}
+        <h3 class="essay-card-title">${escapeHtml(e.title)}</h3>
+        ${e.subtitle ? `<p class="essay-card-subtitle">${escapeHtml(e.subtitle)}</p>` : ''}
       </div>
       ${e.date ? `<p class="essay-card-date">${formatDate(e.date)}</p>` : ''}
     </div>`
@@ -1320,7 +1320,8 @@ function openEssay(id) {
   sub.style.display = essay.subtitle ? 'block' : 'none';
   document.getElementById('essay-detail-date').textContent = essay.date ? formatDate(essay.date) : '';
   document.getElementById('essay-detail-tags').textContent = essay.tags || '';
-  document.getElementById('essay-detail-body').innerHTML   = marked.parse(essay.content);
+  const rawHtml = marked.parse(essay.content);
+  document.getElementById('essay-detail-body').innerHTML   = window.DOMPurify ? DOMPurify.sanitize(rawHtml) : escapeHtml(essay.content);
   document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
   document.getElementById('essay-detail-view').classList.remove('hidden');
   _renderRelatedHighlights(essay);
@@ -1354,8 +1355,8 @@ function _renderRelatedHighlights(essay) {
         const b   = book(h.bookId);
         const col = b ? getCoverColor(b.category) : '#3a5a8c';
         return `<div class="related-highlight-card" style="border-left-color:${col}" onclick="openHighlightDetail(${h.id})">
-          <p class="related-highlight-text">&ldquo;${h.text}&rdquo;</p>
-          ${b ? `<p class="related-highlight-source">&mdash; ${b.title}</p>` : ''}
+          <p class="related-highlight-text">&ldquo;${escapeHtml(h.text)}&rdquo;</p>
+          ${b ? `<p class="related-highlight-source">&mdash; ${escapeHtml(b.title)}</p>` : ''}
         </div>`;
       }).join('')}
     </div>`;
@@ -1379,9 +1380,9 @@ function _renderRelatedEssays(essay) {
     <div class="related-essays-list">
       ${matched.map(e => `
         <div class="related-essay-card" onclick="openEssay(${e.id})">
-          <p class="related-essay-title">${e.title}</p>
-          ${e.subtitle ? `<p class="related-essay-subtitle">${e.subtitle}</p>` : ''}
-          ${e.tags ? `<p class="related-essay-tags">${Array.isArray(e.tags) ? e.tags.join(', ') : e.tags}</p>` : ''}
+          <p class="related-essay-title">${escapeHtml(e.title)}</p>
+          ${e.subtitle ? `<p class="related-essay-subtitle">${escapeHtml(e.subtitle)}</p>` : ''}
+          ${e.tags ? `<p class="related-essay-tags">${escapeHtml(Array.isArray(e.tags) ? e.tags.join(', ') : e.tags)}</p>` : ''}
         </div>`).join('')}
     </div>`;
 }
@@ -1542,9 +1543,9 @@ async function loadWishlist() {
       <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
       <div class="home-waitlist-spine" style="background-color:${getCoverColor(w.category)}"></div>
       <div class="home-waitlist-info" onclick="showEditWishlistForm(${w.id})">
-        <span class="home-waitlist-title">${w.title}</span>
-        ${w.author ? `<span class="home-waitlist-author">${w.author}</span>` : ''}
-        <span class="home-waitlist-category">${w.category}</span>
+        <span class="home-waitlist-title">${escapeHtml(w.title)}</span>
+        ${w.author ? `<span class="home-waitlist-author">${escapeHtml(w.author)}</span>` : ''}
+        <span class="home-waitlist-category">${escapeHtml(w.category)}</span>
       </div>
       <div class="wishlist-item-actions">
         <button class="wishlist-move-btn" onclick="showMoveToBooks(${w.id})">&#10142; Add to Books</button>
@@ -1733,8 +1734,8 @@ function showCategoryModal(stubs) {
   const CATEGORIES = ['Escape', 'Understand', 'Reflect', 'Evolve', 'Question'];
   document.getElementById('category-modal-books').innerHTML = stubs.map((s, i) =>
     `<div class="modal-book-row">
-      <div class="modal-book-title">${s.title}</div>
-      ${s.author ? `<div class="modal-book-author">${s.author}</div>` : ''}
+      <div class="modal-book-title">${escapeHtml(s.title)}</div>
+      ${s.author ? `<div class="modal-book-author">${escapeHtml(s.author)}</div>` : ''}
       <select class="modal-category-select" data-index="${i}">
         ${CATEGORIES.map(c => `<option value="${c}"${c === 'Understand' ? ' selected' : ''}>${c}</option>`).join('')}
       </select>
@@ -1965,7 +1966,7 @@ function renderSprintActive() {
     const daysLeft = Math.ceil((new Date(c.endDate) - new Date()) / (1000 * 60 * 60 * 24));
     return `<div class="sprint-card">
       <div class="sprint-card-top">
-        <span class="sprint-card-name">${c.name}</span>
+        <span class="sprint-card-name">${escapeHtml(c.name)}</span>
         <button class="sprint-card-delete" onclick="deleteSprint(${c.id})" title="Delete">&#215;</button>
       </div>
       <p class="sprint-motivation">A little reading a day keeps the existential dread at bay.</p>
@@ -1988,7 +1989,7 @@ function renderSprintAchieved() {
     const done = sprintProgress(c);
     return `<div class="sprint-card sprint-card-achieved">
       <div class="sprint-card-top">
-        <span class="sprint-card-name">${c.name}</span>
+        <span class="sprint-card-name">${escapeHtml(c.name)}</span>
         <button class="sprint-card-delete" onclick="deleteSprint(${c.id})" title="Delete">&#215;</button>
       </div>
       <p class="sprint-achieved-headline">Plot twist: you actually did it. 🎉</p>
@@ -2009,7 +2010,7 @@ function renderSprintArchived() {
     const pct  = Math.min(100, Math.round((done / c.target) * 100));
     return `<div class="sprint-card sprint-card-archived">
       <div class="sprint-card-top">
-        <span class="sprint-card-name">${c.name}</span>
+        <span class="sprint-card-name">${escapeHtml(c.name)}</span>
         <button class="sprint-card-delete" onclick="deleteSprint(${c.id})" title="Delete">&#215;</button>
       </div>
       <div class="sprint-progress-row">
@@ -2541,8 +2542,8 @@ async function _fnrFetchBooks(query) {
     if (!items.length) { sugEl.innerHTML = '<p class="fnr-lookup-loading">No results.</p>'; return; }
     sugEl.innerHTML = items.map(i =>
       `<div class="fnr-suggestion-item" onclick="fnrSelectBook('${i.title.replace(/'/g,"\\'")}','${i.author.replace(/'/g,"\\'")}')">
-        <span class="fnr-sug-title">${i.title}</span>
-        ${i.author ? `<span class="fnr-sug-author">${i.author}</span>` : ''}
+        <span class="fnr-sug-title">${escapeHtml(i.title)}</span>
+        ${i.author ? `<span class="fnr-sug-author">${escapeHtml(i.author)}</span>` : ''}
       </div>`).join('');
   } catch { sugEl.innerHTML = '<p class="fnr-lookup-loading">Lookup failed.</p>'; }
 }
@@ -2563,7 +2564,7 @@ async function _fnrFetchAuthors(query) {
     if (!authors.length) { sugEl.innerHTML = '<p class="fnr-lookup-loading">No results.</p>'; return; }
     sugEl.innerHTML = authors.map(a =>
       `<div class="fnr-suggestion-item" onclick="fnrSelectAuthor('${a.replace(/'/g,"\\'")}')">
-        <span class="fnr-sug-title">${a}</span>
+        <span class="fnr-sug-title">${escapeHtml(a)}</span>
       </div>`).join('');
   } catch { sugEl.innerHTML = '<p class="fnr-lookup-loading">Lookup failed.</p>'; }
 }
@@ -2744,23 +2745,23 @@ function _fnrRenderResults() {
 
 function _fnrCardHtml(r, i) {
   const gbUrl   = `https://books.google.com/books?q=${encodeURIComponent(r.title + ' ' + r.author)}`;
-  const feelTags = (r.reading_feel || []).map(t => `<span class="fnr-feel-tag">${t}</span>`).join('');
+  const feelTags = (r.reading_feel || []).map(t => `<span class="fnr-feel-tag">${escapeHtml(t)}</span>`).join('');
   const effort   = r.effort_level || '';
   const effortClass = effort === 'Easy' ? 'fnr-effort-easy' : effort === 'Dense' ? 'fnr-effort-dense' : 'fnr-effort-moderate';
   return `
     <div class="fnr-result-card" id="fnr-card-${i}">
       <div class="fnr-card-top">
         <div class="fnr-card-title-wrap">
-          <span class="fnr-card-title">${r.title}</span>
-          <span class="fnr-card-author">${r.author}</span>
+          <span class="fnr-card-title">${escapeHtml(r.title)}</span>
+          <span class="fnr-card-author">${escapeHtml(r.author)}</span>
         </div>
         <a href="${gbUrl}" target="_blank" rel="noopener noreferrer" class="fnr-gb-link" title="View on Google Books"><i class="ph-bold ph-arrow-square-out"></i></a>
       </div>
-      <p class="fnr-card-desc">${r.description}</p>
-      <p class="fnr-card-why">${r.why_it_fits}</p>
+      <p class="fnr-card-desc">${escapeHtml(r.description)}</p>
+      <p class="fnr-card-why">${escapeHtml(r.why_it_fits)}</p>
       <div class="fnr-card-meta">
         <div class="fnr-feel-tags">${feelTags}</div>
-        ${effort ? `<span class="fnr-effort-badge ${effortClass}">${effort}</span>` : ''}
+        ${effort ? `<span class="fnr-effort-badge ${effortClass}">${escapeHtml(effort)}</span>` : ''}
       </div>
       <div class="fnr-card-actions">
         <button class="fnr-replace-btn" onclick="fnrReplaceResult(${i})" id="fnr-replace-${i}"><i class="ph-bold ph-arrows-clockwise"></i> Replace</button>
@@ -2949,7 +2950,7 @@ function _renderStep2(draft, body) {
   body.innerHTML = `
     <div class="build-step">
       <p class="build-prompt">Add the line or idea that triggered this</p>
-      <textarea class="build-textarea" id="build-excerpt-input" placeholder="Paste or type the line here…">${draft.excerpt || ''}</textarea>
+      <textarea class="build-textarea" id="build-excerpt-input" placeholder="Paste or type the line here…">${escapeHtml(draft.excerpt || '')}</textarea>
       <div class="build-nav">
         <button class="build-next-btn" onclick="buildStep2Next()">Next →</button>
       </div>
@@ -3019,7 +3020,7 @@ function _renderStep4(draft, body) {
       <p class="build-prompt-small">Select one or two questions to guide your thinking, then write your response:</p>
       <div class="question-pills">${qPills}</div>
       <textarea class="build-textarea" id="build-stage-response" placeholder="Write your response here…"></textarea>
-      ${existing ? `<p class="stage-existing-note"><em>Earlier note:</em> ${existing}</p>` : ''}
+      ${existing ? `<p class="stage-existing-note"><em>Earlier note:</em> ${escapeHtml(existing)}</p>` : ''}
       <div class="build-nav">
         <button class="build-skip-btn" onclick="buildStageSkip()">Skip</button>
         <button class="build-next-btn" onclick="buildStageNext()">Next →</button>
@@ -3097,7 +3098,7 @@ function _renderStep4Output(draft, body) {
     <div class="build-step">
       <p class="build-prompt">Your compiled thought</p>
       <div id="build-compiled-thought" class="compiled-thought-box ${hasResult ? '' : 'loading'}">
-        <p id="compiled-thought-text">${hasResult ? draft.compiled_thought : 'Generating your compiled thought…'}</p>
+        <p id="compiled-thought-text">${hasResult ? escapeHtml(draft.compiled_thought) : 'Generating your compiled thought…'}</p>
       </div>
       <div id="build-ai-feedback" class="build-ai-feedback hidden"></div>
       ${hasResult ? `
@@ -3336,13 +3337,13 @@ function _renderResearchResults(draft) {
   const attached = new Set((draft.attached_research || []).map(r => r.id));
   return Object.entries(byCategory).map(([cat, items]) => `
     <div class="research-category">
-      <p class="research-cat-label">${cat}</p>
+      <p class="research-cat-label">${escapeHtml(cat)}</p>
       ${items.map(item => `
         <div class="research-item" id="ri-${item.id}">
-          <p class="research-item-name">${item.name}</p>
-          <p class="research-item-what">${item.whatItIs}</p>
-          <p class="research-item-core">${item.coreIdea}</p>
-          <p class="research-item-why">Why it fits: ${item.whyItFits}</p>
+          <p class="research-item-name">${escapeHtml(item.name)}</p>
+          <p class="research-item-what">${escapeHtml(item.whatItIs)}</p>
+          <p class="research-item-core">${escapeHtml(item.coreIdea)}</p>
+          <p class="research-item-why">Why it fits: ${escapeHtml(item.whyItFits)}</p>
           ${attached.has(item.id)
             ? `<span class="research-used-badge">✓ Added</span>`
             : `<div class="research-use-row">
@@ -3511,10 +3512,10 @@ function _renderStep7(draft, body) {
     <div class="build-step">
       <div class="stage-header">
         <span class="stage-badge">Section ${idx + 1} of ${total}</span>
-        <span class="stage-name">${section.title}</span>
+        <span class="stage-name">${escapeHtml(section.title)}</span>
       </div>
       <div id="section-draft-box" class="compiled-thought-box ${hasContent ? '' : 'loading'}">
-        <p id="section-draft-text" style="white-space:pre-wrap">${hasContent ? section.content : 'Generating draft…'}</p>
+        <p id="section-draft-text" style="white-space:pre-wrap">${hasContent ? escapeHtml(section.content) : 'Generating draft…'}</p>
       </div>
       <div id="build-ai-feedback" class="build-ai-feedback hidden"></div>
       ${hasContent ? `
@@ -3684,7 +3685,7 @@ function _renderStep9b(draft, body) {
   const optionsHtml = options.length
     ? options.map((t, i) => `
         <button class="build-option-card ${selected === t ? 'active' : ''}" onclick="selectTitle(${i})">
-          <span class="build-option-title">${t}</span>
+          <span class="build-option-title">${escapeHtml(t)}</span>
         </button>`).join('')
     : '<p class="build-prompt-small" id="title-placeholder">Generating title options\u2026</p>';
 
@@ -3773,9 +3774,9 @@ function _renderStep9c(draft, body) {
   body.innerHTML = `
     <div class="build-step">
       <p class="build-prompt">Add a subtitle</p>
-      <p class="build-prompt-small">Title: <strong>${draft.title}</strong></p>
+      <p class="build-prompt-small">Title: <strong>${escapeHtml(draft.title)}</strong></p>
       <div id="subtitle-box" class="compiled-thought-box ${hasSubtitle ? '' : 'loading'}">
-        <p id="subtitle-text" style="white-space:pre-wrap">${hasSubtitle ? draft.subtitle : 'Generating subtitle\u2026'}</p>
+        <p id="subtitle-text" style="white-space:pre-wrap">${hasSubtitle ? escapeHtml(draft.subtitle) : 'Generating subtitle\u2026'}</p>
       </div>
       <div id="build-ai-feedback" class="build-ai-feedback hidden"></div>
       ${hasSubtitle ? `
@@ -3856,7 +3857,7 @@ function _renderStep9d(draft, body) {
 
   const chipHtml = suggestions.length
     ? suggestions.map(t => `
-        <button class="question-pill ${selected.includes(t) ? 'active' : ''}" onclick="toggleTag('${t.replace(/'/g,'\\&apos;')}")">${t}</button>`).join('')
+        <button class="question-pill ${selected.includes(t) ? 'active' : ''}" onclick="toggleTag('${t.replace(/'/g,'\\&apos;')}")">${escapeHtml(t)}</button>`).join('')
     : '<p class="build-prompt-small">Generating tag suggestions\u2026</p>';
 
   body.innerHTML = `

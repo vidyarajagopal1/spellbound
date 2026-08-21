@@ -6,6 +6,7 @@ const ASSETS = [
   '/styles.css?v=98',
   '/logo-header.png',
   '/manifest.json',
+  '/purify.min.js',
   'https://cdn.jsdelivr.net/npm/marked@9/marked.min.js'
 ];
 
