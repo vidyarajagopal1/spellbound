@@ -204,7 +204,6 @@ function maybeInitSync() {
     gapi.client.setToken({ access_token: resp.access_token });
     await syncFromDrive();
   };
-  tokenClient.requestAccessToken({ prompt: '' });
 }
 
 function signIn() {
