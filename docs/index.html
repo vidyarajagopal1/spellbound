@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=101">
+  <link rel="stylesheet" href="styles.css?v=102">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
@@ -587,6 +587,10 @@
               <p class="settings-action-desc">Bring in books from a Goodreads CSV export.</p>
             </div>
             <div class="settings-action">
+              <button class="settings-btn-outline" onclick="cleanupGoodreadsImportCategories()"><i class="ph-bold ph-eraser"></i> Clear categories on original Goodreads import</button>
+              <p class="settings-action-desc">One-off fix for the batch imported before AI categorisation existed.</p>
+            </div>
+            <div class="settings-action">
               <button class="settings-btn-outline" onclick="reSortCategoriesWithAI()"><i class="ph-bold ph-sparkle"></i> Re-sort categories with AI</button>
               <p class="settings-action-desc">Assign categories to books that don't have one.</p>
               <p id="settings-resort-progress" class="gr-import-progress hidden"></p>
@@ -654,7 +658,7 @@
   <script src="purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="app.js?v=101"></script>
+  <script src="app.js?v=102"></script>
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 
