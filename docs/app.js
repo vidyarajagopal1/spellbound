@@ -408,6 +408,25 @@ function _grNormalizeMatch(str) {
     .toLowerCase();
 }
 
+// Normalises a book title for duplicate matching. Builds on _grNormalizeMatch and
+// additionally: drops anything after a colon (subtitle), strips a trailing
+// parenthetical series marker (e.g. "(Hercule Poirot, #34)"), strips a single leading
+// article ("the"/"a"/"an"), and removes punctuation. Two titles that normalise to the
+// same string are treated as the same book, regardless of author.
+function _grNormalizeTitle(str) {
+  let s = _grNormalizeMatch(str);
+  s = s.split(':')[0].trim();
+  let prev;
+  do {
+    prev = s;
+    s = s.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  } while (s !== prev);
+  s = s.replace(/^(the|a|an)\s+/, '');
+  s = s.replace(/[^\w\s]/g, '');
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+
 let _grPendingImport = null;
 
 function importGoodreads() {
@@ -426,9 +445,13 @@ async function handleGoodreadsFile(event) {
   const rows = _parseCSV(text);
   if (!rows.length) { alert('No data found in the CSV.'); return; }
 
-  // Build sets for duplicate detection (normalised title+author)
-  const existingBooks    = new Set(books.map(b    => _grNormalizeMatch(b.title) + '|' + _grNormalizeMatch(b.author)));
-  const existingWishlist = new Set(wishlist.map(w  => _grNormalizeMatch(w.title) + '|' + _grNormalizeMatch(w.author)));
+  // Build sets for duplicate detection. Matching is by normalised title alone —
+  // author is not used to override a title match. Even when both records have a
+  // non-empty author that clearly differs, a title match is still skipped: creating
+  // a second copy of a book the reader has already tracked is worse than a rare
+  // false-positive skip.
+  const existingBookTitles     = new Set(books.map(b    => _grNormalizeTitle(b.title)));
+  const existingWishlistTitles = new Set(wishlist.map(w  => _grNormalizeTitle(w.title)));
 
   const toBooks    = [];
   const toWishlist = [];
@@ -452,15 +475,15 @@ async function handleGoodreadsFile(event) {
 
     if (!title) continue;
 
-    const key    = _grNormalizeMatch(title) + '|' + _grNormalizeMatch(author);
-    const status = _grShelfToStatus(shelf);
+    const normTitle = _grNormalizeTitle(title);
+    const status    = _grShelfToStatus(shelf);
 
     if (status === null) {
       // to-read → wishlist
-      if (existingWishlist.has(key)) { skipped.push(title); continue; }
+      if (existingWishlistTitles.has(normTitle)) { skipped.push(title); continue; }
       toWishlist.push({ title, author });
     } else {
-      if (existingBooks.has(key))    { skipped.push(title); continue; }
+      if (existingBookTitles.has(normTitle))     { skipped.push(title); continue; }
       toBooks.push({ title, author, status, dateRead, dateAdded, review });
     }
   }
@@ -496,7 +519,10 @@ function _showGrConfirmModal(toBooks, toWishlist, skipped) {
     ).join('')}${toWishlist.length > 5 ? `<li>…and ${toWishlist.length - 5} more</li>` : ''}</ul>`);
   }
   if (skipped.length) {
-    lines.push(`<p class="gr-confirm-line gr-confirm-skip"><strong>${skipped.length}</strong> duplicate${skipped.length !== 1 ? 's' : ''} skipped (already in your library).</p>`);
+    lines.push(`<p class="gr-confirm-line gr-confirm-skip"><strong>${skipped.length}</strong> duplicate${skipped.length !== 1 ? 's' : ''} skipped (title already in your library):</p>`);
+    lines.push(`<ul class="gr-confirm-list">${skipped.slice(0, 10).map(t =>
+      `<li>${escapeHtml(t)}</li>`
+    ).join('')}${skipped.length > 10 ? `<li>…and ${skipped.length - 10} more</li>` : ''}</ul>`);
   }
 
   body.innerHTML = lines.join('');
