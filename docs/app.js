@@ -648,6 +648,7 @@ async function confirmGoodreadsImport() {
       favouriteCharacter: '',
       dateCompleted: b.status === 'Completed' && b.dateRead ? b.dateRead : '',
       updatedAt:    now,
+      source:       'goodreads',
     };
     books.push(book);
     await dbPut('books', book);
@@ -671,6 +672,63 @@ async function confirmGoodreadsImport() {
   const added   = toBooks.length + toWishlist.length;
   const skipped = pending.skipped.length;
   alert(`Import complete — ${added} book${added !== 1 ? 's' : ''} added${skipped ? `, ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped` : ''}.`);
+}
+
+// One-off cleanup for the batch of books imported from Goodreads before AI
+// categorisation existed. Matches ONLY on the exact shared `updatedAt` timestamp
+// that batch was written with — nothing else. Refuses to run unless the match
+// count is exactly 62, since that's the known size of the affected batch.
+const GR_LEGACY_IMPORT_TIMESTAMP = '2026-08-21T14:04:36.881Z';
+
+async function cleanupGoodreadsImportCategories() {
+  const matches = books.filter(b => b.updatedAt === GR_LEGACY_IMPORT_TIMESTAMP);
+
+  if (matches.length !== 62) {
+    alert(`Expected exactly 62 books matching the original Goodreads import timestamp, but found ${matches.length}. No changes made.`);
+    return;
+  }
+
+  const ok = confirm(`This will clear the category on ${matches.length} books from the original Goodreads import and mark their source as "goodreads". Continue?`);
+  if (!ok) return;
+
+  for (const b of matches) {
+    b.category = '';
+    b.source   = 'goodreads';
+    await dbPut('books', b);
+  }
+
+  await saveAndSync();
+  refreshCurrentView();
+  alert(`Done — cleared categories on ${matches.length} books.`);
+}
+
+// Runs AI categorisation over any book currently missing a category. Existing
+// categories are never touched — only books whose `category` is empty/falsy
+// are sent to the AI, and _grCategorizeBooks() only ever writes a category
+// when the AI confidently returns one.
+async function reSortCategoriesWithAI() {
+  const targets = books.filter(b => !b.category);
+
+  if (targets.length === 0) {
+    alert('Every book already has a category assigned.');
+    return;
+  }
+
+  const ok = confirm(`This will use AI to assign a category to ${targets.length} book${targets.length !== 1 ? 's' : ''} that currently have none. Books that already have a category will not be changed. Continue?`);
+  if (!ok) return;
+
+  const progressEl = document.getElementById('settings-resort-progress');
+  await _grCategorizeBooks(targets, progressEl);
+
+  let updated = 0;
+  for (const b of targets) {
+    if (b.category) { await dbPut('books', b); updated++; }
+  }
+
+  await saveAndSync();
+  refreshCurrentView();
+  alert(`Done — ${updated} of ${targets.length} book${targets.length !== 1 ? 's' : ''} were categorised.` +
+    (updated < targets.length ? ' The rest could not be confidently placed, or the AI call failed.' : ''));
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -1328,6 +1386,7 @@ async function addBook(event) {
     notes:              document.getElementById('book-notes-input').value,
     aftertaste:         document.getElementById('book-aftertaste-input').value,
     updatedAt:          new Date().toISOString(),
+    source:             'manual',
   };
   await dbPut('books', book);
   hideForm();
@@ -1974,6 +2033,7 @@ async function moveToBooks(wishlistId, status) {
     favouriteCharacter: item.author ? '' : '',
     dateCompleted:      '',
     medium:             '',
+    source:             item.source,
   };
   await dbPut('books', book);
   await dbDelete('wishlist', wishlistId);
@@ -2132,6 +2192,7 @@ async function finishImport(clippings, newBookStubs) {
       author:   stub.author,
       status:   'Reading',
       category: stub.category,
+      source:   'kindle',
     };
     createdBooks.push(book);
     localBooks.push(book);

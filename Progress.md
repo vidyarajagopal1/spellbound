@@ -596,6 +596,7 @@ Replaced the category-sub-grouped row list with a visual **pile of books** — e
 | v97 | Realistic book lighting: highlight ridge gradient, side lighting gradient, deepened cast shadow, cream pages edge |
 | v98 | Category key: sticky shelf-divider tabs; category filter AND'd with status pill; sticky toolbar |
 | v99 | Goodreads import: AI categorisation of imported books/wishlist items before write |
+| v100 | `source` field on new book records; Settings cleanup tool for legacy Goodreads import categories; "Re-sort categories with AI" for uncategorised books |
 
 ---
 
@@ -609,4 +610,14 @@ Books and wishlist items pulled in from a Goodreads CSV import are now categoris
 - **Fails safe**: no API key, network error, or malformed JSON leaves that batch's books with no category (`''`) — the import always completes and writes every book/wishlist item regardless of AI outcome
 - Confirmation modal copy updated: notes that books will be sorted into categories automatically and can be changed afterwards
 - `books` and `wishlist` category fields now default to `''` (was hard-coded `'Understand'`) when categorisation doesn't resolve — uncategorised books render with the existing neutral fallback colour/style already used elsewhere for unknown categories
+
+## Book Source Field + Settings Cleanup Tools (v100)
+
+- **`source` field** added to book records — new records only, no backfill of existing data:
+  - `addBook()` → `'manual'`
+  - `confirmGoodreadsImport()` → `'goodreads'`
+  - Bookcision/Kindle `finishImport()` → `'kindle'`
+  - `moveToBooks()` (wishlist → book promotion) → carries over the wishlist item's `source` as-is (wishlist itself has no `source` field and is left untouched)
+- **Settings → Data → "Clear categories on original Goodreads import"**: one-off fix for the batch of 62 books written before AI categorisation existed. Matches strictly on the exact shared `updatedAt` timestamp (`2026-08-21T14:04:36.881Z`) that batch was written with — no other criteria. Refuses to run and reports the count instead if it isn't exactly 62. On confirm, clears `category` and sets `source: 'goodreads'` on each match.
+- **Settings → Data → "Re-sort categories with AI"**: reuses `_grCategorizeBooks()` over every book currently missing a category; never touches books that already have one. Confirmation shows the affected count; progress line shows while the AI call runs; final alert reports how many were successfully categorised.
 
