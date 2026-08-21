@@ -578,11 +578,26 @@
           <h3 class="settings-section-title">Data</h3>
           <p class="settings-section-desc">Download a full backup of your library — books, highlights, essays, wishlist, challenges, and drafts — as a JSON file.</p>
           <button class="settings-save-btn" onclick="exportLibrary()"><i class="ph-bold ph-export"></i> Export my library</button>
+          <p class="settings-section-desc" style="margin-top:1rem">Import books from a Goodreads CSV export. Duplicates (matched by title and author) are skipped automatically.</p>
+          <input type="file" id="goodreads-file-input" accept=".csv" style="display:none" onchange="handleGoodreadsFile(event)">
+          <button class="settings-save-btn" onclick="importGoodreads()"><i class="ph-bold ph-download-simple"></i> Import from Goodreads</button>
         </section>
       </div>
     </div>
 
   </main>
+
+  <!-- Goodreads import confirmation modal -->
+  <div id="gr-confirm-modal" class="modal-overlay hidden">
+    <div class="modal-box">
+      <h3 class="modal-title">Import from Goodreads</h3>
+      <div id="gr-confirm-body"></div>
+      <div class="modal-actions">
+        <button class="modal-confirm-btn" onclick="confirmGoodreadsImport()">Import</button>
+        <button class="modal-cancel-btn" onclick="closeGrConfirmModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Category Modal for new books during import -->
   <div id="category-modal-overlay" class="modal-overlay hidden">

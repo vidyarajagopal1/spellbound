@@ -314,6 +314,196 @@ async function exportLibrary() {
   URL.revokeObjectURL(url);
 }
 
+// ─── GOODREADS CSV IMPORT ─────────────────────────────────────────────────────
+function _parseCSV(text) {
+  // Returns array of objects keyed by header row.
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  if (lines.length < 2) return [];
+
+  function splitRow(line) {
+    const fields = [];
+    let cur = '', inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuote) {
+        if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+        else if (ch === '"')                    { inQuote = false; }
+        else                                    { cur += ch; }
+      } else {
+        if (ch === '"')       { inQuote = true; }
+        else if (ch === ',')  { fields.push(cur); cur = ''; }
+        else                  { cur += ch; }
+      }
+    }
+    fields.push(cur);
+    return fields;
+  }
+
+  const headers = splitRow(lines[0]).map(h => h.trim());
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const vals = splitRow(lines[i]);
+    const obj  = {};
+    headers.forEach((h, idx) => { obj[h] = (vals[idx] || '').trim(); });
+    rows.push(obj);
+  }
+  return rows;
+}
+
+function _grShelfToStatus(shelf) {
+  const s = (shelf || '').toLowerCase();
+  if (s === 'read')              return 'Completed';
+  if (s === 'currently-reading') return 'Reading';
+  return null; // to-read → wishlist
+}
+
+let _grPendingImport = null;
+
+function importGoodreads() {
+  document.getElementById('goodreads-file-input').click();
+}
+
+async function handleGoodreadsFile(event) {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+
+  let text;
+  try { text = await file.text(); }
+  catch { alert('Could not read the file.'); return; }
+
+  const rows = _parseCSV(text);
+  if (!rows.length) { alert('No data found in the CSV.'); return; }
+
+  // Build sets for duplicate detection (lowercase title+author)
+  const existingBooks    = new Set(books.map(b    => (b.title + '|' + (b.author || '')).toLowerCase()));
+  const existingWishlist = new Set(wishlist.map(w  => (w.title + '|' + (w.author || '')).toLowerCase()));
+
+  const toBooks    = [];
+  const toWishlist = [];
+  const skipped    = [];
+
+  for (const row of rows) {
+    const title   = row['Title']  || row['title']  || '';
+    const author   = row['Author'] || row['author'] || row['Author l-f'] || '';
+    const shelf    = row['Exclusive Shelf'] || row['exclusive_shelf'] || '';
+    const dateRead  = row['Date Read']  || row['date_read']  || '';
+    const dateAdded = row['Date Added'] || row['date_added'] || '';
+    const rawReview = row['My Review'] || row['my_review'] || '';
+    // Strip HTML tags (e.g. <br>, <br />) to plain line breaks; collapse multiples
+    const review = rawReview
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    if (!title) continue;
+
+    const key    = (title + '|' + author).toLowerCase();
+    const status = _grShelfToStatus(shelf);
+
+    if (status === null) {
+      // to-read → wishlist
+      if (existingWishlist.has(key)) { skipped.push(title); continue; }
+      toWishlist.push({ title, author });
+    } else {
+      if (existingBooks.has(key))    { skipped.push(title); continue; }
+      toBooks.push({ title, author, status, dateRead, dateAdded, review });
+    }
+  }
+
+  if (!toBooks.length && !toWishlist.length) {
+    alert(`Nothing to import — all ${skipped.length} book${skipped.length !== 1 ? 's' : ''} already exist in your library.`);
+    return;
+  }
+
+  _grPendingImport = { toBooks, toWishlist, skipped };
+  _showGrConfirmModal(toBooks, toWishlist, skipped);
+}
+
+function _showGrConfirmModal(toBooks, toWishlist, skipped) {
+  const modalOverlay = document.getElementById('gr-confirm-modal');
+  const body         = document.getElementById('gr-confirm-body');
+
+  const lines = [];
+  if (toBooks.length) {
+    const withReview = toBooks.filter(b => b.review).length;
+    lines.push(`<p class="gr-confirm-line"><strong>${toBooks.length}</strong> book${toBooks.length !== 1 ? 's' : ''} will be added to your library:</p>`);
+    lines.push(`<ul class="gr-confirm-list">${toBooks.slice(0, 10).map(b =>
+      `<li>${escapeHtml(b.title)}${b.author ? ` <span class="gr-confirm-author">— ${escapeHtml(b.author)}</span>` : ''} <span class="gr-confirm-status">(${escapeHtml(b.status)})</span></li>`
+    ).join('')}${toBooks.length > 10 ? `<li>…and ${toBooks.length - 10} more</li>` : ''}</ul>`);
+    if (withReview) {
+      lines.push(`<p class="gr-confirm-line">${withReview} of these include a review that will be saved as Notes.</p>`);
+    }
+  }
+  if (toWishlist.length) {
+    lines.push(`<p class="gr-confirm-line"><strong>${toWishlist.length}</strong> book${toWishlist.length !== 1 ? 's' : ''} will be added to your Wishlist (to-read):</p>`);
+    lines.push(`<ul class="gr-confirm-list">${toWishlist.slice(0, 5).map(w =>
+      `<li>${escapeHtml(w.title)}${w.author ? ` <span class="gr-confirm-author">— ${escapeHtml(w.author)}</span>` : ''}</li>`
+    ).join('')}${toWishlist.length > 5 ? `<li>…and ${toWishlist.length - 5} more</li>` : ''}</ul>`);
+  }
+  if (skipped.length) {
+    lines.push(`<p class="gr-confirm-line gr-confirm-skip"><strong>${skipped.length}</strong> duplicate${skipped.length !== 1 ? 's' : ''} skipped (already in your library).</p>`);
+  }
+
+  body.innerHTML = lines.join('');
+  modalOverlay.classList.remove('hidden');
+}
+
+function closeGrConfirmModal() {
+  document.getElementById('gr-confirm-modal').classList.add('hidden');
+  _grPendingImport = null;
+}
+
+async function confirmGoodreadsImport() {
+  const pending = _grPendingImport;
+  if (!pending) return;
+  document.getElementById('gr-confirm-modal').classList.add('hidden');
+  _grPendingImport = null;
+
+  const { toBooks, toWishlist } = pending;
+  const now = new Date().toISOString();
+
+  for (const b of toBooks) {
+    const book = {
+      id:           nextId(books),
+      title:        b.title,
+      author:       b.author,
+      status:       b.status,
+      category:     'Understand',
+      medium:       '',
+      rating:       '',
+      notes:        b.review || '',
+      aftertaste:   '',
+      favouriteCharacter: '',
+      dateCompleted: b.status === 'Completed' && b.dateRead ? b.dateRead : '',
+      updatedAt:    now,
+    };
+    books.push(book);
+    await dbPut('books', book);
+  }
+
+  for (const w of toWishlist) {
+    const item = {
+      id:       nextId(wishlist),
+      title:    w.title,
+      author:   w.author,
+      category: 'Understand',
+      note:     '',
+    };
+    wishlist.push(item);
+    await dbPut('wishlist', item);
+  }
+
+  if (gapiReady && gapi.client.getToken()) syncToDrive().catch(() => {});
+  refreshCurrentView();
+
+  const added   = toBooks.length + toWishlist.length;
+  const skipped = pending.skipped.length;
+  alert(`Import complete — ${added} book${added !== 1 ? 's' : ''} added${skipped ? `, ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped` : ''}.`);
+}
+
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function formatDate(date) {
   if (!date) return '';
