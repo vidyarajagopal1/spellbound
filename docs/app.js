@@ -297,6 +297,24 @@ async function syncToDrive() {
   }
 }
 
+async function exportLibrary() {
+  const waitlistOrder = await dbGetMeta('waitlist-order') || [];
+  const wishlistOrder = await dbGetMeta('wishlist-order') || [];
+  const essay_drafts  = await dbGetAll('essay_drafts');
+  const payload  = JSON.stringify({ books, highlights, essays, wishlist, challenges, waitlistOrder, wishlistOrder, essay_drafts }, null, 2);
+  const date     = new Date().toISOString().slice(0, 10);
+  const filename = `spellbound-${date}.json`;
+  const blob     = new Blob([payload], { type: 'application/json' });
+  const url      = URL.createObjectURL(blob);
+  const a        = document.createElement('a');
+  a.href         = url;
+  a.download     = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function formatDate(date) {
   if (!date) return '';
