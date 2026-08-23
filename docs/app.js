@@ -1985,7 +1985,29 @@ async function loadWishlist() {
   makeDraggableList(listEl, saveWishlistOrder);
 }
 
-function openWishlistDetail(id) {
+async function fetchWishlistDescription(item) {
+  if (!navigator.onLine) return null;
+  const q = `intitle:${item.title}` + (item.author ? ` inauthor:${item.author}` : '');
+  const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const raw  = data.items?.[0]?.volumeInfo?.description;
+    if (!raw) return null;
+    const clean = (window.DOMPurify
+      ? DOMPurify.sanitize(raw, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] })
+      : raw.replace(/<[^>]*>/g, '')).trim();
+    if (!clean) return null;
+    return clean.length > 700
+      ? clean.slice(0, 700).replace(/\s+\S*$/, '') + '…'
+      : clean;
+  } catch {
+    return null;
+  }
+}
+
+async function openWishlistDetail(id) {
   currentWishlistId = id;
   const item = wishlist.find(w => w.id === id);
   if (!item) return;
@@ -2002,7 +2024,7 @@ function openWishlistDetail(id) {
       ${item.description ? `<div class="highlight-detail-section"><span class="highlight-detail-label">What it's about</span><p class="highlight-detail-body">${escapeHtml(item.description)}</p></div>` : ''}
       ${item.whyItFits ? `<div class="highlight-detail-section"><span class="highlight-detail-label">Why it was suggested</span><p class="highlight-detail-body">${escapeHtml(item.whyItFits)}</p></div>` : ''}
       ${item.note ? `<div class="highlight-detail-section"><span class="highlight-detail-label">Your note</span><p class="highlight-detail-body">${escapeHtml(item.note)}</p></div>` : ''}
-      ${!hasNotes ? `<div class="highlight-detail-section"><p class="highlight-detail-body"><em>Nothing saved about this one yet.</em></p></div>` : ''}
+      ${!hasNotes ? `<div class="highlight-detail-section"><p class="highlight-detail-body"><em>${item.descriptionChecked ? 'Nothing saved about this one yet.' : 'Looking this up…'}</em></p></div>` : ''}
       <div class="wishlist-item-actions">
         <button class="wishlist-move-btn" onclick="showMoveToBooksFromDetail(${item.id})">&#10142; Add to Books</button>
         <button class="wishlist-move-btn" onclick="showEditWishlistForm(${item.id})">&#9998; Edit</button>
@@ -2017,6 +2039,13 @@ function openWishlistDetail(id) {
     </div>`;
   document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
   document.getElementById('wishlist-detail-view').classList.remove('hidden');
+  if (!item.description && !item.descriptionChecked) {
+    const desc = await fetchWishlistDescription(item);
+    item.descriptionChecked = true;
+    if (desc) item.description = desc;
+    await dbPut('wishlist', item);
+    if (currentWishlistId === id) openWishlistDetail(id);
+  }
 }
 
 function showMoveToBooksFromDetail(id) {
