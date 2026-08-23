@@ -2523,29 +2523,34 @@ function _resetOcrSection() {
 
 // ─── AI SERVICE LAYER ─────────────────────────────────────────────────────────
 
+// Shared access code baked into the app so AI features work out of the box
+// with no setup. Users can override it with their own code in Settings.
+const DEFAULT_ACCESS_CODE = 'spellbound-cohort-1';
+
 /**
- * Core AI call. If an access code is set, routes through the SpellBound proxy
- * (which holds the real API key server-side). Otherwise falls back to calling
- * OpenAI or Anthropic directly using the user's own key.
+ * Core AI call. If the user has entered their own API key in Settings, calls
+ * OpenAI or Anthropic directly with that key. Otherwise routes through the
+ * SpellBound proxy (which holds a shared API key server-side), using the
+ * user's access code override if set, or DEFAULT_ACCESS_CODE otherwise.
  * @param {string}   systemPrompt  - Instructions / constraints for the AI
  * @param {Array}    thread        - Prior [{role,content}] messages for refinement context
  * @param {string}   userMessage   - The new user message
  * @returns {Promise<string>}      - The AI's plain-text response
  */
 async function callAI(systemPrompt, thread = [], userMessage) {
-  const accessCode = await dbGetMeta('ai_access_code') || '';
-  const provider   = await dbGetMeta('ai_provider')    || 'openai';
-  const apiKey     = await dbGetMeta('ai_api_key')     || '';
+  const apiKey   = await dbGetMeta('ai_api_key')  || '';
+  const provider = await dbGetMeta('ai_provider') || 'openai';
 
   const messages = [
     ...thread,
     { role: 'user', content: userMessage }
   ];
 
-  if (accessCode) {
+  if (!apiKey) {
     // Proxy path: SpellBound's Cloudflare Worker holds the real API key and
     // only accepts gpt-4o / gpt-4o-mini, using the same request/response
     // shape as OpenAI's /v1/chat/completions.
+    const accessCode = (await dbGetMeta('ai_access_code') || '') || DEFAULT_ACCESS_CODE;
     const res = await fetch('https://spellbound-api.vidyarajagopal1.workers.dev', {
       method:  'POST',
       headers: {
@@ -2564,10 +2569,6 @@ async function callAI(systemPrompt, thread = [], userMessage) {
     }
     const data = await res.json();
     return data.choices?.[0]?.message?.content ?? '';
-  }
-
-  if (!apiKey) {
-    throw new Error('NO_AI_ACCESS');
   }
 
   if (provider === 'claude') {
