@@ -2524,24 +2524,51 @@ function _resetOcrSection() {
 // ─── AI SERVICE LAYER ─────────────────────────────────────────────────────────
 
 /**
- * Core AI call. Sends a message to either OpenAI or Anthropic.
+ * Core AI call. If an access code is set, routes through the SpellBound proxy
+ * (which holds the real API key server-side). Otherwise falls back to calling
+ * OpenAI or Anthropic directly using the user's own key.
  * @param {string}   systemPrompt  - Instructions / constraints for the AI
  * @param {Array}    thread        - Prior [{role,content}] messages for refinement context
  * @param {string}   userMessage   - The new user message
  * @returns {Promise<string>}      - The AI's plain-text response
  */
 async function callAI(systemPrompt, thread = [], userMessage) {
-  const provider = await dbGetMeta('ai_provider') || 'openai';
-  const apiKey   = await dbGetMeta('ai_api_key')  || '';
-
-  if (!apiKey) {
-    throw new Error('NO_API_KEY');
-  }
+  const accessCode = await dbGetMeta('ai_access_code') || '';
+  const provider   = await dbGetMeta('ai_provider')    || 'openai';
+  const apiKey     = await dbGetMeta('ai_api_key')     || '';
 
   const messages = [
     ...thread,
     { role: 'user', content: userMessage }
   ];
+
+  if (accessCode) {
+    // Proxy path: SpellBound's Cloudflare Worker holds the real API key and
+    // only accepts gpt-4o / gpt-4o-mini, using the same request/response
+    // shape as OpenAI's /v1/chat/completions.
+    const res = await fetch('https://spellbound-api.vidyarajagopal1.workers.dev', {
+      method:  'POST',
+      headers: {
+        'X-Access-Code': accessCode,
+        'Content-Type':  'application/json'
+      },
+      body: JSON.stringify({
+        model:      'gpt-4o',
+        max_tokens: 2048,
+        messages:   [{ role: 'system', content: systemPrompt }, ...messages]
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `Proxy error ${res.status}`);
+    }
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content ?? '';
+  }
+
+  if (!apiKey) {
+    throw new Error('NO_AI_ACCESS');
+  }
 
   if (provider === 'claude') {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -2590,8 +2617,8 @@ async function callAI(systemPrompt, thread = [], userMessage) {
 
 /**
  * Wraps a callAI() call for UI use.
- * On NO_API_KEY, nudges the user to Settings rather than throwing.
- * Returns the response string, or null if the key is missing.
+ * On NO_AI_ACCESS, nudges the user to Settings rather than throwing.
+ * Returns the response string, or null if no access code/key is set.
  */
 async function callAIWithFeedback(systemPrompt, thread, userMessage, feedbackEl) {
   try {
@@ -2601,8 +2628,8 @@ async function callAIWithFeedback(systemPrompt, thread, userMessage, feedbackEl)
     return result;
   } catch (err) {
     if (feedbackEl) {
-      feedbackEl.textContent = err.message === 'NO_API_KEY'
-        ? 'No API key set. Go to Settings to add one.'
+      feedbackEl.textContent = err.message === 'NO_AI_ACCESS'
+        ? 'AI features need an access code. Go to Settings to add one.'
         : `AI error: ${err.message}`;
       feedbackEl.classList.remove('hidden');
     }
@@ -3142,7 +3169,7 @@ async function submitFindNextRead() {
     document.getElementById('fnr-form-section').style.display    = 'block';
     document.getElementById('fnr-edit-prefs-btn').classList.add('hidden');
     const errEl = document.getElementById('fnr-form-error');
-    errEl.textContent = 'No API key set — go to Settings to add one, then try again.';
+    errEl.textContent = 'AI features need an access code — go to Settings to add one, then try again.';
     errEl.classList.remove('hidden');
     return;
   }
@@ -4410,23 +4437,28 @@ async function saveBuiltEssay() {
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 async function loadSettings() {
-  const provider = await dbGetMeta('ai_provider') || 'openai';
-  const key      = await dbGetMeta('ai_api_key')  || '';
-  const providerEl = document.getElementById('settings-ai-provider');
-  const keyEl      = document.getElementById('settings-ai-key');
-  if (providerEl) providerEl.value = provider;
-  if (keyEl)      keyEl.value      = key;
+  const provider   = await dbGetMeta('ai_provider')    || 'openai';
+  const key        = await dbGetMeta('ai_api_key')     || '';
+  const accessCode = await dbGetMeta('ai_access_code') || '';
+  const providerEl    = document.getElementById('settings-ai-provider');
+  const keyEl         = document.getElementById('settings-ai-key');
+  const accessCodeEl  = document.getElementById('settings-ai-access-code');
+  if (providerEl)   providerEl.value   = provider;
+  if (keyEl)        keyEl.value        = key;
+  if (accessCodeEl) accessCodeEl.value = accessCode;
   const msg = document.getElementById('settings-save-msg');
   if (msg) { msg.textContent = ''; msg.classList.add('hidden'); }
 }
 
 async function saveSettings() {
-  const provider = document.getElementById('settings-ai-provider').value;
-  const key      = document.getElementById('settings-ai-key').value.trim();
-  const msg      = document.getElementById('settings-save-msg');
+  const provider   = document.getElementById('settings-ai-provider').value;
+  const key        = document.getElementById('settings-ai-key').value.trim();
+  const accessCode = document.getElementById('settings-ai-access-code').value.trim();
+  const msg        = document.getElementById('settings-save-msg');
 
-  await dbSetMeta('ai_provider', provider);
-  await dbSetMeta('ai_api_key',  key);
+  await dbSetMeta('ai_provider',    provider);
+  await dbSetMeta('ai_api_key',     key);
+  await dbSetMeta('ai_access_code', accessCode);
 
   msg.textContent = 'Settings saved.';
   msg.classList.remove('hidden', 'error');
@@ -4436,6 +4468,19 @@ async function saveSettings() {
 function toggleApiKeyVisibility() {
   const input = document.getElementById('settings-ai-key');
   const eye   = document.getElementById('settings-key-eye');
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    eye.className = 'ph-bold ph-eye-slash';
+  } else {
+    input.type = 'password';
+    eye.className = 'ph-bold ph-eye';
+  }
+}
+
+function toggleAccessCodeVisibility() {
+  const input = document.getElementById('settings-ai-access-code');
+  const eye   = document.getElementById('settings-access-code-eye');
   if (!input) return;
   if (input.type === 'password') {
     input.type = 'text';

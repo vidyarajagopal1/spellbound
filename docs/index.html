@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=102">
+  <link rel="stylesheet" href="styles.css?v=103">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
@@ -550,10 +550,20 @@
 
         <section class="settings-section">
           <h3 class="settings-section-title">AI Assistant</h3>
-          <p class="settings-section-desc">Your API key is stored only on this device and is never synced to Google Drive.</p>
+          <p class="settings-section-desc">Add an access code to unlock all AI features instantly — no API key needed. Prefer to use your own OpenAI or Anthropic key instead? That's supported too, below. Nothing here is synced to Google Drive.</p>
 
           <div class="settings-field">
-            <label for="settings-ai-provider">AI Provider</label>
+            <label for="settings-ai-access-code">Access code (recommended)</label>
+            <div class="settings-key-row">
+              <input type="password" id="settings-ai-access-code" placeholder="Enter your access code" autocomplete="off" spellcheck="false">
+              <button class="settings-key-toggle" onclick="toggleAccessCodeVisibility()" aria-label="Toggle access code visibility">
+                <i class="ph-bold ph-eye" id="settings-access-code-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="settings-field">
+            <label for="settings-ai-provider">AI Provider (advanced)</label>
             <select id="settings-ai-provider">
               <option value="openai">OpenAI (GPT-4o)</option>
               <option value="claude">Anthropic (Claude)</option>
@@ -561,9 +571,9 @@
           </div>
 
           <div class="settings-field">
-            <label for="settings-ai-key">API Key</label>
+            <label for="settings-ai-key">API Key (advanced, only used without an access code)</label>
             <div class="settings-key-row">
-              <input type="password" id="settings-ai-key" placeholder="Paste your API key here" autocomplete="off" spellcheck="false">
+              <input type="password" id="settings-ai-key" placeholder="Paste your own API key here" autocomplete="off" spellcheck="false">
               <button class="settings-key-toggle" onclick="toggleApiKeyVisibility()" aria-label="Toggle key visibility">
                 <i class="ph-bold ph-eye" id="settings-key-eye"></i>
               </button>
@@ -658,7 +668,7 @@
   <script src="purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="app.js?v=102"></script>
+  <script src="app.js?v=103"></script>
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 
