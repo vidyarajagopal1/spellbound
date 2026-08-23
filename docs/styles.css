@@ -263,7 +263,6 @@ main { min-height: 100%; }
 .highlight-detail-label  { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); display: block; margin-bottom: 4px; }
 .highlight-detail-body   { font-size: 0.88rem; line-height: 1.55; margin: 0; }
 
-
 .home-covers {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

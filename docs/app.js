@@ -8,6 +8,7 @@ const DRIVE_SCOPE      = 'https://www.googleapis.com/auth/drive.appdata';
 let currentBookId      = null;
 let currentEssayId     = null;
 let currentHighlightId = null;
+let currentWishlistId  = null;
 let dogEaredId         = null;
 let books              = [];
 let highlights         = [];
@@ -771,6 +772,7 @@ function refreshCurrentView() {
   else if (id === 'book-detail-view'     && currentBookId)      openBook(currentBookId);
   else if (id === 'essay-detail-view'    && currentEssayId)     openEssay(currentEssayId);
   else if (id === 'highlight-detail-view'&& currentHighlightId) openHighlightDetail(currentHighlightId);
+  else if (id === 'wishlist-detail-view' && currentWishlistId)  openWishlistDetail(currentWishlistId);
   else if (id === 'wishlist-view')         loadWishlist();
   else if (id === 'sprint-view')           loadSprint();
 }
@@ -849,6 +851,7 @@ function showView(view) {
   if (view !== 'book-detail')      currentBookId      = null;
   if (view !== 'essay-detail')     currentEssayId     = null;
   if (view !== 'highlight-detail') currentHighlightId = null;
+  if (view !== 'wishlist-detail')  currentWishlistId  = null;
   document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
   document.getElementById(view + '-view').classList.remove('hidden');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -1960,7 +1963,7 @@ async function loadWishlist() {
     <div class="home-waitlist-item" data-id="${w.id}">
       <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
       <div class="home-waitlist-spine" style="background-color:${getCoverColor(w.category)}"></div>
-      <div class="home-waitlist-info" onclick="showEditWishlistForm(${w.id})">
+      <div class="home-waitlist-info" onclick="openWishlistDetail(${w.id})">
         <span class="home-waitlist-title">${escapeHtml(w.title)}</span>
         ${w.author ? `<span class="home-waitlist-author">${escapeHtml(w.author)}</span>` : ''}
         <span class="home-waitlist-category">${escapeHtml(w.category)}</span>
@@ -1980,6 +1983,40 @@ async function loadWishlist() {
   container.innerHTML = '';
   container.appendChild(listEl);
   makeDraggableList(listEl, saveWishlistOrder);
+}
+
+function openWishlistDetail(id) {
+  currentWishlistId = id;
+  const item = wishlist.find(w => w.id === id);
+  if (!item) return;
+  const hasNotes = item.description || item.whyItFits || item.note;
+  document.getElementById('wishlist-detail-content').innerHTML = `
+    <div class="highlight-detail-card" style="border-left-color:${getCoverColor(item.category)}">
+      <h2>${escapeHtml(item.title)}</h2>
+      ${item.author ? `<p>${escapeHtml(item.author)}</p>` : ''}
+      <p>${escapeHtml(item.category)}</p>
+      ${item.description ? `<div class="highlight-detail-section"><span class="highlight-detail-label">What it's about</span><p class="highlight-detail-body">${escapeHtml(item.description)}</p></div>` : ''}
+      ${item.whyItFits ? `<div class="highlight-detail-section"><span class="highlight-detail-label">Why it was suggested</span><p class="highlight-detail-body">${escapeHtml(item.whyItFits)}</p></div>` : ''}
+      ${item.note ? `<div class="highlight-detail-section"><span class="highlight-detail-label">Your note</span><p class="highlight-detail-body">${escapeHtml(item.note)}</p></div>` : ''}
+      ${!hasNotes ? `<div class="highlight-detail-section"><p class="highlight-detail-body"><em>Nothing saved about this one yet.</em></p></div>` : ''}
+      <div class="wishlist-item-actions">
+        <button class="wishlist-move-btn" onclick="showMoveToBooksFromDetail(${item.id})">&#10142; Add to Books</button>
+        <button class="wishlist-move-btn" onclick="showEditWishlistForm(${item.id})">&#9998; Edit</button>
+        <button class="delete-btn" onclick="deleteWishlistItem(${item.id})">&#128465;</button>
+      </div>
+      <div class="wishlist-status-prompt hidden" id="wishlist-detail-prompt">
+        <span class="wishlist-prompt-label">Add as:</span>
+        <button class="wishlist-status-btn" onclick="moveToBooks(${item.id}, 'Queued Up')">Queued Up</button>
+        <button class="wishlist-status-btn" onclick="moveToBooks(${item.id}, 'Reading')">Reading</button>
+        <button class="wishlist-cancel-btn" onclick="document.getElementById('wishlist-detail-prompt').classList.add('hidden')">Cancel</button>
+      </div>
+    </div>`;
+  document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
+  document.getElementById('wishlist-detail-view').classList.remove('hidden');
+}
+
+function showMoveToBooksFromDetail(id) {
+  document.getElementById('wishlist-detail-prompt').classList.remove('hidden');
 }
 
 function showEditWishlistForm(id) {
@@ -2008,6 +2045,7 @@ async function updateWishlistItem(event) {
   await dbPut('wishlist', item);
   hideForm();
   await saveAndSync();
+  if (currentWishlistId === id) openWishlistDetail(id);
   loadWishlist();
 }
 
@@ -2038,14 +2076,16 @@ async function moveToBooks(wishlistId, status) {
   await dbPut('books', book);
   await dbDelete('wishlist', wishlistId);
   await saveAndSync();
-  loadWishlist();
+  if (currentWishlistId === wishlistId) showView('wishlist');
+  else loadWishlist();
 }
 
 async function deleteWishlistItem(id) {
   if (!confirm('Remove from wishlist?')) return;
   await dbDelete('wishlist', id);
   await saveAndSync();
-  loadWishlist();
+  if (currentWishlistId === id) showView('wishlist');
+  else loadWishlist();
 }
 
 function showAddWishlistForm() {
@@ -3304,11 +3344,13 @@ async function fnrAddToWishlist(index) {
   const btn  = document.getElementById(`fnr-wish-${index}`);
   if (!r || !btn || btn.disabled) return;
   const item = {
-    id:       nextId(wishlist),
-    title:    r.title,
-    author:   r.author  || '',
-    category: '',
-    note:     '',
+    id:          nextId(wishlist),
+    title:       r.title,
+    author:      r.author  || '',
+    category:    '',
+    note:        '',
+    description: r.description || '',
+    whyItFits:   r.why_it_fits || '',
   };
   await dbPut('wishlist', item);
   wishlist.push(item);
