@@ -1989,8 +1989,10 @@ async function fetchWishlistDescription(item) {
   if (!navigator.onLine) return undefined;
   const q = `intitle:${item.title}` + (item.author ? ` inauthor:${item.author}` : '');
   const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) return undefined; // transient (e.g. rate limit) — retry later, don't mark checked
     const data = await res.json();
     const raw  = data.items?.[0]?.volumeInfo?.description;
@@ -2003,7 +2005,9 @@ async function fetchWishlistDescription(item) {
       ? clean.slice(0, 700).replace(/\s+\S*$/, '') + '…'
       : clean;
   } catch {
-    return undefined; // network error — retry later, don't mark checked
+    return undefined; // network error or timeout — retry later, don't mark checked
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -2024,7 +2028,7 @@ async function openWishlistDetail(id) {
       ${item.description ? `<div class="highlight-detail-section"><span class="highlight-detail-label">What it's about</span><p class="highlight-detail-body">${escapeHtml(item.description)}</p></div>` : ''}
       ${item.whyItFits ? `<div class="highlight-detail-section"><span class="highlight-detail-label">Why it was suggested</span><p class="highlight-detail-body">${escapeHtml(item.whyItFits)}</p></div>` : ''}
       ${item.note ? `<div class="highlight-detail-section"><span class="highlight-detail-label">Your note</span><p class="highlight-detail-body">${escapeHtml(item.note)}</p></div>` : ''}
-      ${!hasNotes ? `<div class="highlight-detail-section"><p class="highlight-detail-body"><em>${item.descriptionChecked ? 'Nothing saved about this one yet.' : 'Looking this up…'}</em></p>${item.descriptionChecked ? `<button class="wishlist-move-btn" onclick="retryWishlistDescription(${item.id})">&#8635; Try lookup again</button>` : ''}</div>` : ''}
+      ${!hasNotes ? `<div class="highlight-detail-section"><p class="highlight-detail-body"><em>${item.descriptionChecked ? 'Nothing saved about this one yet.' : (item._lookupFailed ? "Couldn't look this up right now." : 'Looking this up…')}</em></p>${(item.descriptionChecked || item._lookupFailed) ? `<button class="wishlist-move-btn" onclick="retryWishlistDescription(${item.id})">&#8635; Try lookup again</button>` : ''}</div>` : ''}
       <div class="wishlist-item-actions">
         <button class="wishlist-move-btn" onclick="showMoveToBooksFromDetail(${item.id})">&#10142; Add to Books</button>
         <button class="wishlist-move-btn" onclick="showEditWishlistForm(${item.id})">&#9998; Edit</button>
@@ -2039,14 +2043,16 @@ async function openWishlistDetail(id) {
     </div>`;
   document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
   document.getElementById('wishlist-detail-view').classList.remove('hidden');
-  if (!item.description && !item.descriptionChecked) {
+  if (!item.description && !item.descriptionChecked && !item._lookupFailed) {
     const desc = await fetchWishlistDescription(item);
     if (desc !== undefined) {
       item.descriptionChecked = true;
       if (desc) item.description = desc;
       await dbPut('wishlist', item);
-      if (currentWishlistId === id) openWishlistDetail(id);
+    } else {
+      item._lookupFailed = true;
     }
+    if (currentWishlistId === id) openWishlistDetail(id);
   }
 }
 
@@ -2054,6 +2060,7 @@ async function retryWishlistDescription(id) {
   const item = wishlist.find(w => w.id === id);
   if (!item) return;
   item.descriptionChecked = false;
+  item._lookupFailed = false;
   if (currentWishlistId === id) openWishlistDetail(id);
 }
 
