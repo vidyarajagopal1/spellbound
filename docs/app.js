@@ -1990,9 +1990,13 @@ function openWishlistDetail(id) {
   const item = wishlist.find(w => w.id === id);
   if (!item) return;
   const hasNotes = item.description || item.whyItFits || item.note;
+  const gbUrl = `https://books.google.com/books?q=${encodeURIComponent(item.title + ' ' + (item.author || ''))}`;
   document.getElementById('wishlist-detail-content').innerHTML = `
     <div class="highlight-detail-card" style="border-left-color:${getCoverColor(item.category)}">
-      <h2>${escapeHtml(item.title)}</h2>
+      <div class="fnr-card-top">
+        <h2>${escapeHtml(item.title)}</h2>
+        <a href="${gbUrl}" target="_blank" rel="noopener noreferrer" class="fnr-gb-link" title="View on Google Books"><i class="ph-bold ph-arrow-square-out"></i></a>
+      </div>
       ${item.author ? `<p>${escapeHtml(item.author)}</p>` : ''}
       <p>${escapeHtml(item.category)}</p>
       ${item.description ? `<div class="highlight-detail-section"><span class="highlight-detail-label">What it's about</span><p class="highlight-detail-body">${escapeHtml(item.description)}</p></div>` : ''}
@@ -2660,14 +2664,19 @@ async function callAI(systemPrompt, thread = [], userMessage) {
  * Wraps a callAI() call for UI use.
  * On NO_AI_ACCESS, nudges the user to Settings rather than throwing.
  * Returns the response string, or null if no access code/key is set.
+ * On failure, the real error message is stashed in _lastAICallError so
+ * callers that don't have a dedicated feedbackEl can still show it.
  */
+let _lastAICallError = null;
 async function callAIWithFeedback(systemPrompt, thread, userMessage, feedbackEl) {
   try {
     if (feedbackEl) { feedbackEl.textContent = 'Thinking…'; feedbackEl.classList.remove('hidden'); }
     const result = await callAI(systemPrompt, thread, userMessage);
     if (feedbackEl) feedbackEl.classList.add('hidden');
+    _lastAICallError = null;
     return result;
   } catch (err) {
+    _lastAICallError = err.message || 'Unknown error';
     if (feedbackEl) {
       feedbackEl.textContent = err.message === 'NO_AI_ACCESS'
         ? 'AI features need an access code. Go to Settings to add one.'
@@ -3210,7 +3219,9 @@ async function submitFindNextRead() {
     document.getElementById('fnr-form-section').style.display    = 'block';
     document.getElementById('fnr-edit-prefs-btn').classList.add('hidden');
     const errEl = document.getElementById('fnr-form-error');
-    errEl.textContent = 'AI features need an access code — go to Settings to add one, then try again.';
+    errEl.textContent = _lastAICallError
+      ? `AI error: ${_lastAICallError}`
+      : 'AI features need an access code — go to Settings to add one, then try again.';
     errEl.classList.remove('hidden');
     return;
   }
