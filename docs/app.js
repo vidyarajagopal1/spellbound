@@ -883,7 +883,7 @@ async function loadHome() {
   document.getElementById('reading-books').innerHTML =
     '<h2 class="home-section-title">Currently Reading</h2>' +
     (readingBooks.length === 0
-      ? '<p class="home-empty">Nothing on the go yet.</p>'
+      ? '<p class="home-empty">Once you add a book, this is where you\'ll find your way back to it.</p>'
       : `<div class="home-covers">${readingBooks.map(b =>
           `<div class="book-cover" onclick="openBook(${b.id})" style="background-color:${getCoverColor(b.category)}">
             <div class="book-cover-spine"></div>
@@ -908,7 +908,7 @@ async function loadHome() {
   const waitlistContainer = document.getElementById('waitlisted-books');
   waitlistContainer.innerHTML = '<h2 class="home-section-title">Queued Up</h2>';
   if (ordered.length === 0) {
-    waitlistContainer.innerHTML += '<p class="home-empty">Nothing waiting.</p>';
+    waitlistContainer.innerHTML += '<p class="home-empty">Books you\'ve marked as Queued Up wait here, vying for the next spot while nudging you along.</p>';
   } else {
     const listEl = document.createElement('div');
     listEl.id = 'waitlisted-books-list';
@@ -943,7 +943,7 @@ function renderDogEared(excludeId) {
   if (showEmpty) {
     container.innerHTML = heading + `
       <div class="dog-eared-empty">
-        <p class="home-empty">No highlights saved yet.</p>
+        <p class="home-empty">The Highlights you save will surface here as easter eggs every time you come back.</p>
         <button class="dog-eared-add-btn" onclick="showAddHighlightForm()">Add Highlight</button>
       </div>`;
     return;
