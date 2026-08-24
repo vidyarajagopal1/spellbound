@@ -300,8 +300,9 @@ async function syncToDrive() {
 async function exportLibrary() {
   const waitlistOrder = await dbGetMeta('waitlist-order') || [];
   const wishlistOrder = await dbGetMeta('wishlist-order') || [];
+  const fnrRejectedForever = await dbGetMeta('fnr_rejected_forever') || [];
   const essay_drafts  = await dbGetAll('essay_drafts');
-  const payload  = JSON.stringify({ books, highlights, essays, wishlist, challenges, waitlistOrder, wishlistOrder, essay_drafts }, null, 2);
+  const payload  = JSON.stringify({ books, highlights, essays, wishlist, challenges, waitlistOrder, wishlistOrder, fnrRejectedForever, essay_drafts }, null, 2);
   const date     = new Date().toISOString().slice(0, 10);
   const filename = `spellbound-${date}.json`;
   const blob     = new Blob([payload], { type: 'application/json' });
@@ -2883,30 +2884,24 @@ Generate exactly 8 tags for the essay.
 - Return only the 8 tags as a comma-separated list on a single line — no other text.`,
 
   findNextRead: `You are a literary recommendation engine for a personal reading app called SpellBound.
-Your task: return exactly 5 book recommendations based on the user's current mood, preferences, and reading history.
+Your task: return exactly 5 book recommendations based on the reader's request below.
+
+MESSAGE STRUCTURE YOU WILL RECEIVE (read in this priority order):
+1. READER'S REQUEST — the reader's explicit, current picks (genre, topic/mood, reference book/author, reading context, what to avoid). This is the PRIMARY signal. Every recommendation must plausibly satisfy it.
+2. EXCLUDE LIST — titles you must never recommend, under any circumstance (already owned, wishlisted, or previously rejected by this reader).
+3. TASTE CALIBRATION ONLY — the reader's past ratings/highlights. This is SECONDARY flavor used only to fine-tune tone or style among books that already satisfy the request. It must never override, dilute, or substitute for the request. If the calibration data seems to point somewhere else entirely, ignore it in favor of the explicit request.
+4. VARIETY TOKEN — an internal value that must never be mentioned, explained, or treated as user-visible content.
 
 CRITICAL RULES:
 1. Return ONLY valid JSON — no prose, no preamble, no markdown code fences, no commentary outside the JSON.
 2. Return exactly 5 recommendations in the "recommendations" array.
-3. Do not recommend books already listed in the user's reading history.
+3. Never recommend a title that appears in the EXCLUDE LIST, in any form (same title, same title+author pair).
 4. Keep variety: do not return near-identical books or more than 2 books by the same author (unless an author is explicitly requested).
-5. Each "why_it_fits" must reference at least one specific signal from the user's input or reading history. Do not use generic statements.
-
-RECOMMENDATION ALGORITHM:
-Step 1 — Build candidate pool from genres, custom_genre, topic_text, and user history.
-Step 2 — Expand with books similar to book_title (if given); books by/similar to author_name (if given); books matching topic themes.
-Step 3 — Remove books matching anything in avoid_text (themes, tone, style, length).
-Step 4 — Score each book:
-  +3 similar to book_title
-  +3 by author_name or similar author
-  +2 matches topic_text
-  +2 matches any genres
-  +1 matches reading_context
-  +1 similar to user history
-  +1 matches tone/style from book_notes or author_notes
-Step 5 — Rank by score.
-Step 6 — Select: top 2 highest scoring; next 2 ensuring variety from top 15; last 1 slightly different from top 30.
-Step 7 — Author rule: max 2 books by requested author; otherwise prefer different authors.
+5. Do not default to extremely famous "canon"/best-of-all-time staples unless they genuinely and specifically satisfy the reader's request — a request for one genre or mood must not be answered with an unrelated famous book just because it's well known.
+6. Each "why_it_fits" must reference at least one specific signal from the READER'S REQUEST. Do not use generic statements, and do not justify a pick using only taste-calibration data if it doesn't also satisfy the request.
+7. Only recommend real, verifiable books. Author name and first-publication year must be factually correct. If you are not certain a title genuinely exists with that author, do not use it — choose a different, real book you are certain about instead. Never invent a title.
+8. Recency: when nothing in the request signals a preference for older/classic/vintage work, favor including 1–2 more recently published titles (roughly the last several years) among the 5. When the request signals a classic, vintage, or historical preference (e.g. genre is historical fiction, or the reader's text mentions "classic"/"old"/similar), do not force recency — pick what genuinely fits instead.
+9. Use the VARIETY TOKEN only to vary which valid, request-satisfying candidates you surface when there are multiple equally good options — never as a reason to pick something that doesn't fit the request, and never mention it in your output.
 
 RESPONSE FORMAT — return this exact JSON structure:
 {
@@ -2915,7 +2910,7 @@ RESPONSE FORMAT — return this exact JSON structure:
       "title": "Book title",
       "author": "Author full name",
       "description": "One sentence — what the book is actually about",
-      "why_it_fits": "1–2 sentences referencing the user's specific input or history. Be specific.",
+      "why_it_fits": "1–2 sentences referencing the reader's specific request. Be specific.",
       "reading_feel": ["tag1", "tag2", "tag3"],
       "effort_level": "Easy"
     }
@@ -3030,11 +3025,15 @@ const FNR_CONTEXTS = [
 let _fnrFormState  = null;  // saved when navigating to results; cleared on fresh open
 let _fnrResults    = [];    // current 5 results on screen
 let _fnrSearchTimer = null;
+let _fnrSessionRejected = []; // {title, author} replaced/rejected earlier in this sitting; cleared on fresh open
+let _fnrRejectedSlots   = new Set(); // slot indices currently marked as permanently rejected (dimmed state)
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
 function openFindNextRead() {
   _fnrFormState = null;
+  _fnrSessionRejected = [];
+  _fnrRejectedSlots = new Set();
   document.getElementById('wishlist-main').style.display = 'none';
   document.getElementById('fnr-content').style.display   = 'block';
   document.getElementById('fnr-form-section').style.display    = 'block';
@@ -3289,34 +3288,112 @@ function _fnrSerializeContext(ctx) {
   return lines.join('\n');
 }
 
+// ── Exclusion list (wishlist + library + session/permanent rejects) ──────────
+
+function _fnrNormKey(title, author) {
+  return `${(title || '').trim().toLowerCase()}|${(author || '').trim().toLowerCase()}`;
+}
+
+/**
+ * Builds the deduped, capped list of {title, author} the AI must never
+ * recommend: permanent rejects > session rejects > wishlist > library
+ * (library's already-in-profile top-rated books dropped first if truncating).
+ */
+async function _fnrExcludedTitles() {
+  const CAP = 250;
+  const permanentRejects = (await dbGetMeta('fnr_rejected_forever')) || [];
+  const sessionRejects   = _fnrSessionRejected;
+  const wishlistItems    = wishlist.map(w => ({ title: w.title, author: w.author || '' }));
+
+  const topRatedIds = new Set(
+    books.filter(b => b.rating === 'rentfree' || b.rating === 'wrecked').slice(0, 30).map(b => b.id)
+  );
+  // Library titles NOT already named in the taste-calibration profile block are kept longest;
+  // top-rated ones (already named there) are dropped first if the cap is hit.
+  const libraryRest     = books.filter(b => !topRatedIds.has(b.id)).map(b => ({ title: b.title, author: b.author || '' }));
+  const libraryTopRated = books.filter(b => topRatedIds.has(b.id)).map(b => ({ title: b.title, author: b.author || '' }));
+
+  const tiers  = [permanentRejects, sessionRejects, wishlistItems, libraryRest, libraryTopRated];
+  const seen   = new Set();
+  const result = [];
+  for (const tier of tiers) {
+    for (const item of tier) {
+      if (!item || !item.title) continue;
+      const key = _fnrNormKey(item.title, item.author);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(item);
+      if (result.length >= CAP) return result;
+    }
+  }
+  return result;
+}
+
+function _fnrFormatTitleList(items) {
+  return items.map(b => `- "${b.title}"${b.author ? ` by ${b.author}` : ''}`).join('\n');
+}
+
+function _fnrBuildExplicitRequestBlock(s) {
+  const genreLabels   = (s.genres || []).filter(v => v !== 'something_else')
+    .map(v => FNR_GENRES.find(g => g.value === v)?.label).filter(Boolean);
+  const contextLabels = (s.contexts || []).filter(v => v !== 'something_else')
+    .map(v => FNR_CONTEXTS.find(c => c.value === v)?.label).filter(Boolean);
+
+  return [
+    genreLabels.length   ? `GENRES: ${genreLabels.join(', ')}` : '',
+    s.customGenre        ? `CUSTOM GENRE: ${s.customGenre}` : '',
+    s.topic               ? `TOPIC / MOOD: ${s.topic}` : '',
+    s.bookValue           ? `REFERENCE BOOK: ${s.bookValue}` : '',
+    s.bookNotes           ? `WHAT STAYED WITH THEM ABOUT IT: ${s.bookNotes}` : '',
+    s.authorValue         ? `REFERENCE AUTHOR: ${s.authorValue}` : '',
+    s.authorNotes         ? `WHAT THEY LOVE ABOUT THAT AUTHOR: ${s.authorNotes}` : '',
+    contextLabels.length  ? `READING CONTEXT: ${contextLabels.join(', ')}` : '',
+    s.customContext       ? `CUSTOM CONTEXT: ${s.customContext}` : '',
+    s.avoid               ? `AVOID: ${s.avoid}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+/**
+ * Shared message builder for both the initial submit and Replace calls.
+ * Ordering (request → exclusions → profile-as-calibration-only) and the
+ * per-call variety token live here so both call sites stay in sync.
+ * `currentlyShowing` (Replace only) are the titles on screen right now —
+ * merged into the exclusion list so a replacement can't duplicate a sibling slot.
+ */
+async function _fnrBuildUserMessage(s, { extraInstruction = '', currentlyShowing = [] } = {}) {
+  const requestBlock = _fnrBuildExplicitRequestBlock(s);
+
+  const excluded = await _fnrExcludedTitles();
+  const seen = new Set(excluded.map(b => _fnrNormKey(b.title, b.author)));
+  currentlyShowing.forEach(b => {
+    const key = _fnrNormKey(b.title, b.author);
+    if (!seen.has(key)) { seen.add(key); excluded.push(b); }
+  });
+  const excludedText = _fnrFormatTitleList(excluded);
+
+  const ctx     = _fnrBuildUserContext();
+  const profile = _fnrSerializeContext(ctx);
+
+  const varietyToken = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random()}`;
+
+  return [
+    requestBlock ? `READER'S REQUEST:\n${requestBlock}` : '',
+    excludedText ? `EXCLUDE LIST (never recommend any of these):\n${excludedText}` : '',
+    profile      ? `TASTE CALIBRATION ONLY:\n${profile}` : '',
+    extraInstruction || '',
+    `VARIETY TOKEN: ${varietyToken}`,
+  ].filter(Boolean).join('\n\n');
+}
+
 // ── Submit ────────────────────────────────────────────────────────────────────
 
 async function submitFindNextRead() {
   _fnrSaveFormState();
   const s = _fnrFormState;
 
-  // Build user message
-  const genreLabels  = s.genres.filter(v => v !== 'something_else')
-    .map(v => FNR_GENRES.find(g => g.value === v)?.label).filter(Boolean);
-  const contextLabels = s.contexts.filter(v => v !== 'something_else')
-    .map(v => FNR_CONTEXTS.find(c => c.value === v)?.label).filter(Boolean);
-
-  const ctx     = _fnrBuildUserContext();
-  const profile = _fnrSerializeContext(ctx);
-
-  const userMsg = [
-    profile ? `USER READING PROFILE:\n${profile}` : '',
-    genreLabels.length  ? `GENRES: ${genreLabels.join(', ')}` : '',
-    s.customGenre       ? `CUSTOM GENRE: ${s.customGenre}` : '',
-    s.topic             ? `TOPIC / MOOD: ${s.topic}` : '',
-    s.bookValue         ? `REFERENCE BOOK: ${s.bookValue}` : '',
-    s.bookNotes         ? `WHAT STAYED WITH THEM ABOUT IT: ${s.bookNotes}` : '',
-    s.authorValue       ? `REFERENCE AUTHOR: ${s.authorValue}` : '',
-    s.authorNotes       ? `WHAT THEY LOVE ABOUT THAT AUTHOR: ${s.authorNotes}` : '',
-    contextLabels.length ? `READING CONTEXT: ${contextLabels.join(', ')}` : '',
-    s.customContext     ? `CUSTOM CONTEXT: ${s.customContext}` : '',
-    s.avoid             ? `AVOID: ${s.avoid}` : '',
-  ].filter(Boolean).join('\n\n');
+  const userMsg = await _fnrBuildUserMessage(s);
 
   // Show loading
   document.getElementById('fnr-form-section').style.display    = 'none';
@@ -3375,12 +3452,13 @@ function _fnrRenderResults() {
 }
 
 function _fnrCardHtml(r, i) {
+  const rejected = _fnrRejectedSlots.has(i);
   const gbUrl   = `https://books.google.com/books?q=${encodeURIComponent(r.title + ' ' + r.author)}`;
   const feelTags = (r.reading_feel || []).map(t => `<span class="fnr-feel-tag">${escapeHtml(t)}</span>`).join('');
   const effort   = r.effort_level || '';
   const effortClass = effort === 'Easy' ? 'fnr-effort-easy' : effort === 'Dense' ? 'fnr-effort-dense' : 'fnr-effort-moderate';
   return `
-    <div class="fnr-result-card" id="fnr-card-${i}">
+    <div class="fnr-result-card${rejected ? ' fnr-card-rejected' : ''}" id="fnr-card-${i}">
       <div class="fnr-card-top">
         <div class="fnr-card-title-wrap">
           <span class="fnr-card-title">${escapeHtml(r.title)}</span>
@@ -3396,9 +3474,53 @@ function _fnrCardHtml(r, i) {
       </div>
       <div class="fnr-card-actions">
         <button class="fnr-replace-btn" onclick="fnrReplaceResult(${i})" id="fnr-replace-${i}"><i class="ph-bold ph-arrows-clockwise"></i> Replace</button>
-        <button class="fnr-wishlist-btn" onclick="fnrAddToWishlist(${i})" id="fnr-wish-${i}"><i class="ph-bold ph-heart"></i> Add to Wishlist</button>
+        <button class="fnr-wishlist-btn" onclick="fnrAddToWishlist(${i})" id="fnr-wish-${i}"${rejected ? ' disabled' : ''}><i class="ph-bold ph-heart"></i> Add to Wishlist</button>
+        ${rejected
+          ? `<button class="fnr-reject-btn fnr-undo-btn" onclick="fnrUndoRejectResult(${i})" id="fnr-reject-${i}"><i class="ph-bold ph-arrow-counter-clockwise"></i> Undo</button>`
+          : `<button class="fnr-reject-btn" onclick="fnrRejectResult(${i})" id="fnr-reject-${i}"><i class="ph-bold ph-x"></i> Reject</button>`}
       </div>
     </div>`;
+}
+
+/**
+ * Permanently marks this result as never-recommend-again (stored in the
+ * `fnr_rejected_forever` meta key). Leaves the slot's content untouched —
+ * does NOT fetch a replacement. A separate Replace tap is needed for that.
+ */
+async function fnrRejectResult(index) {
+  const r = _fnrResults[index];
+  if (!r) return;
+  const entry = { title: r.title, author: r.author || '' };
+  const key = _fnrNormKey(entry.title, entry.author);
+
+  const existing = (await dbGetMeta('fnr_rejected_forever')) || [];
+  if (!existing.some(b => _fnrNormKey(b.title, b.author) === key)) {
+    existing.push(entry);
+    await dbSetMeta('fnr_rejected_forever', existing);
+  }
+  if (!_fnrSessionRejected.some(b => _fnrNormKey(b.title, b.author) === key)) {
+    _fnrSessionRejected.push(entry);
+  }
+  _fnrRejectedSlots.add(index);
+
+  const card = document.getElementById(`fnr-card-${index}`);
+  if (card) card.outerHTML = _fnrCardHtml(r, index);
+}
+
+/** Undoes a mis-tapped Reject: removes the permanent exclusion and restores the card. */
+async function fnrUndoRejectResult(index) {
+  const r = _fnrResults[index];
+  if (!r) return;
+  const key = _fnrNormKey(r.title, r.author || '');
+
+  const existing = (await dbGetMeta('fnr_rejected_forever')) || [];
+  const updated  = existing.filter(b => _fnrNormKey(b.title, b.author) !== key);
+  await dbSetMeta('fnr_rejected_forever', updated);
+  _fnrSessionRejected = _fnrSessionRejected.filter(b => _fnrNormKey(b.title, b.author) !== key);
+  _fnrRejectedSlots.delete(index);
+
+  const card = document.getElementById(`fnr-card-${index}`);
+  if (card) card.outerHTML = _fnrCardHtml(r, index);
 }
 
 async function fnrReplaceResult(index) {
@@ -3406,31 +3528,17 @@ async function fnrReplaceResult(index) {
   replaceBtn.disabled = true;
   replaceBtn.innerHTML = '<i class="ph-bold ph-arrows-clockwise fnr-spin"></i> Finding…';
 
-  const currentTitles = _fnrResults.map((r, i) => i !== index ? `"${r.title}" by ${r.author}` : null).filter(Boolean);
+  // Remember the outgoing book for the rest of this sitting so it can't
+  // resurface later even after it's no longer one of the 5 shown on screen.
+  const outgoing = _fnrResults[index];
+  if (outgoing) _fnrSessionRejected.push({ title: outgoing.title, author: outgoing.author || '' });
+
+  // All 5 currently-showing titles (including the one in this slot) must not
+  // be duplicated by the replacement either.
+  const currentlyShowing = _fnrResults.map(r => ({ title: r.title, author: r.author || '' }));
+
   const s = _fnrFormState || {};
-
-  const genreLabels   = (s.genres || []).filter(v => v !== 'something_else')
-    .map(v => FNR_GENRES.find(g => g.value === v)?.label).filter(Boolean);
-  const contextLabels = (s.contexts || []).filter(v => v !== 'something_else')
-    .map(v => FNR_CONTEXTS.find(c => c.value === v)?.label).filter(Boolean);
-
-  const ctx     = _fnrBuildUserContext();
-  const profile = _fnrSerializeContext(ctx);
-
-  const userMsg = [
-    profile          ? `USER READING PROFILE:\n${profile}` : '',
-    genreLabels.length ? `GENRES: ${genreLabels.join(', ')}` : '',
-    s.customGenre    ? `CUSTOM GENRE: ${s.customGenre}` : '',
-    s.topic          ? `TOPIC / MOOD: ${s.topic}` : '',
-    s.bookValue      ? `REFERENCE BOOK: ${s.bookValue}` : '',
-    s.bookNotes      ? `WHAT STAYED WITH THEM ABOUT IT: ${s.bookNotes}` : '',
-    s.authorValue    ? `REFERENCE AUTHOR: ${s.authorValue}` : '',
-    s.authorNotes    ? `WHAT THEY LOVE ABOUT THAT AUTHOR: ${s.authorNotes}` : '',
-    contextLabels.length ? `READING CONTEXT: ${contextLabels.join(', ')}` : '',
-    s.customContext  ? `CUSTOM CONTEXT: ${s.customContext}` : '',
-    s.avoid          ? `AVOID: ${s.avoid}` : '',
-    `CURRENTLY SHOWING (do NOT repeat any of these):\n${currentTitles.join('\n')}`,
-    `Replace slot ${index + 1} with ONE different recommendation. Return a JSON object with a single "recommendation" key (not an array):
+  const extraInstruction = `Replace slot ${index + 1} with ONE different recommendation. Return a JSON object with a single "recommendation" key (not an array):
 {
   "recommendation": {
     "title": "...",
@@ -3440,8 +3548,8 @@ async function fnrReplaceResult(index) {
     "reading_feel": [...],
     "effort_level": "..."
   }
-}`,
-  ].filter(Boolean).join('\n\n');
+}`;
+  const userMsg = await _fnrBuildUserMessage(s, { extraInstruction, currentlyShowing });
 
   const raw = await callAIWithFeedback(AI_PROMPTS.findNextRead, [], userMsg, null);
   if (!raw) {
@@ -3455,6 +3563,8 @@ async function fnrReplaceResult(index) {
     const newRec  = parsed.recommendation || (parsed.recommendations && parsed.recommendations[0]);
     if (!newRec) throw new Error();
     _fnrResults[index] = newRec;
+    // The rejected flag belongs to the old book in this slot, not the new one.
+    _fnrRejectedSlots.delete(index);
     const card = document.getElementById(`fnr-card-${index}`);
     if (card) card.outerHTML = _fnrCardHtml(newRec, index);
   } catch {

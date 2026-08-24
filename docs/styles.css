@@ -2616,7 +2616,8 @@ main { min-height: 100%; }
   gap: 8px;
 }
 .fnr-replace-btn,
-.fnr-wishlist-btn {
+.fnr-wishlist-btn,
+.fnr-reject-btn {
   flex: 1;
   background: none;
   border: 1px solid rgba(255,255,255,0.1);
@@ -2633,10 +2634,24 @@ main { min-height: 100%; }
 }
 .fnr-replace-btn  { color: var(--text-muted); }
 .fnr-wishlist-btn { color: var(--accent2); border-color: rgba(232,223,200,0.2); }
+.fnr-reject-btn   { color: #e57373; border-color: rgba(229,115,115,0.25); }
 .fnr-replace-btn:active  { background: rgba(255,255,255,0.06); }
 .fnr-wishlist-btn:active { background: rgba(232,223,200,0.08); }
+.fnr-reject-btn:active   { background: rgba(229,115,115,0.1); }
 .fnr-wishlist-btn.fnr-wish-added { color: #81c784; border-color: rgba(76,175,80,0.3); cursor: default; }
-.fnr-wishlist-btn:disabled { opacity: 0.7; }
+.fnr-wishlist-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.fnr-reject-btn.fnr-undo-btn { color: var(--text-muted); border-color: rgba(255,255,255,0.15); }
+
+/* Rejected (permanently excluded) card state */
+.fnr-result-card.fnr-card-rejected {
+  opacity: 0.5;
+}
+.fnr-result-card.fnr-card-rejected .fnr-card-title,
+.fnr-result-card.fnr-card-rejected .fnr-card-desc,
+.fnr-result-card.fnr-card-rejected .fnr-card-why {
+  text-decoration: line-through;
+  text-decoration-color: rgba(255,255,255,0.3);
+}
 
 /* Skeleton loader */
 .fnr-skeleton { pointer-events: none; }
