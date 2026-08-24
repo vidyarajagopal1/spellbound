@@ -1277,7 +1277,7 @@ function triggerEditBookLookup() {
 async function fetchBookSuggestions(title, form) {
   const sugEl = document.getElementById(_sugElId(form));
   if (!sugEl) return;
-  const items = await googleBooksSearch(title, { maxResults: 5 });
+  const items = await googleBooksSearch(title, { maxResults: 5, field: 'intitle' });
   if (items === null) {
     sugEl.innerHTML = '<p class="book-lookup-loading">Lookup failed.</p>';
     return;
@@ -1990,31 +1990,47 @@ async function gbApiKeyParam() {
 // on success (empty array = no matches), or null on failure (offline,
 // network error, timeout, or non-OK response) so callers can distinguish
 // "nothing found" from "couldn't complete the lookup".
+function normalizeBookQuery(s) {
+  return (s || '')
+    .replace(/[’'"]/g, '')
+    .replace(/[-–—:;,.()\[\]{}\/\\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 async function googleBooksSearch(query, { maxResults = 5, field = null, timeout = 8000 } = {}) {
   if (!navigator.onLine) return null;
-  const q = field ? `${field}:${query}` : query;
-  const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=${maxResults}${await gbApiKeyParam()}`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return (data.items || []).map(it => {
-      const v = it.volumeInfo || {};
-      return {
-        title:       v.title || '',
-        author_name: v.authors || [],
-        subject:     v.categories || [],
-        description: v.description || '',
-        thumb:       (v.imageLinks?.thumbnail || '').replace(/^http:/, 'https:')
-      };
-    }).filter(r => r.title);
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
+  const cleaned = normalizeBookQuery(query);
+  const q = field ? `${field}:"${cleaned}"` : query;
+  const runQuery = async (q) => {
+    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=${maxResults}${await gbApiKeyParam()}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return (data.items || []).map(it => {
+        const v = it.volumeInfo || {};
+        return {
+          title:       v.title || '',
+          author_name: v.authors || [],
+          subject:     v.categories || [],
+          description: v.description || '',
+          thumb:       (v.imageLinks?.thumbnail || '').replace(/^http:/, 'https:')
+        };
+      }).filter(r => r.title);
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const results = await runQuery(q);
+  if (field && results !== null && results.length === 0) {
+    return await runQuery(`${field}:${cleaned}`);
   }
+  return results;
 }
 
 async function fetchWishlistDescription(item) {
@@ -3117,7 +3133,7 @@ async function _fnrFetchBooks(query) {
   const sugEl = document.getElementById('fnr-book-suggestions');
   sugEl.classList.remove('hidden');
   sugEl.innerHTML = '<p class="fnr-lookup-loading">Searching…</p>';
-  const results = await googleBooksSearch(query, { maxResults: 5 });
+  const results = await googleBooksSearch(query, { maxResults: 5, field: 'intitle' });
   if (results === null) { sugEl.innerHTML = '<p class="fnr-lookup-loading">Lookup failed.</p>'; return; }
   const items = results.map(item => ({
     title:  item.title || '',
@@ -3137,10 +3153,11 @@ async function _fnrFetchAuthors(query) {
   sugEl.innerHTML = '<p class="fnr-lookup-loading">Searching…</p>';
   const results = await googleBooksSearch(query, { maxResults: 8, field: 'inauthor' });
   if (results === null) { sugEl.innerHTML = '<p class="fnr-lookup-loading">Lookup failed.</p>'; return; }
+  const nq = normalizeBookQuery(query).toLowerCase();
   const authors = [...new Set(
     results
       .flatMap(item => item.author_name || [])
-      .filter(a => a.toLowerCase().includes(query.toLowerCase()))
+      .filter(a => normalizeBookQuery(a).toLowerCase().includes(nq))
   )].slice(0, 5);
   if (!authors.length) { sugEl.innerHTML = '<p class="fnr-lookup-loading">No results.</p>'; return; }
   sugEl.innerHTML = authors.map(a =>
