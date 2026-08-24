@@ -649,6 +649,7 @@ Books and wishlist items pulled in from a Goodreads CSV import are now categoris
 | v112 | Restored `intitle`/`inauthor` field search with quoted-then-unquoted fallback and punctuation normalization |
 | v113 | Book suggestions show full title with subtitle; results re-ranked by title-match relevance |
 | v114 | Title lookups narrowed by the author field when filled in, with graceful fallback if that returns nothing |
+| v115 | Find Your Next Read: fixed Replace excluding the wrong book from its own exclusion list; new wishlist/library/rejection exclusion list; permanent Reject action; prompt rewrite (request-first ordering, anti-genericism, hallucination guardrail, recency scoped to gpt-4o's cutoff, per-call variety token) |
 
 ---
 
@@ -679,4 +680,33 @@ Books and wishlist items pulled in from a Goodreads CSV import are now categoris
 - If the author-narrowed search comes back empty after both attempts, it retries once more without the author clause — author narrows results but never eliminates them entirely
 - New `_authorElId(form)` helper (mirroring `_titleElId()`) resolves the author input id per form (`book-author-input` / `wishlist-author-input` / `edit-book-author`)
 - `fetchBookSuggestions(title, form)` reads the author field via `_authorElId(form)` and passes it through automatically — `triggerEditBookLookup()` picks this up for free since it delegates to `fetchBookSuggestions`
+
+## Find Your Next Read — Recommendation Quality & Exclusion Fixes (v115)
+
+Diagnosed and fixed a set of bugs behind repetitive, off-genre, and non-excludable recommendations reported after real-world use of the v90 feature.
+
+### Replace Repeating the Same Book — Root Cause (v115)
+- The actual bug was a one-line mistake in `fnrReplaceResult()`, not a missing-memory issue: the do-not-repeat list was built with `i !== index ? ... : null`, which **excluded the book in the slot being replaced from its own exclusion list** — so the AI was never told to avoid the exact book it was replacing, and could hand it straight back
+- Fixed by including all 5 currently-displayed titles (including the slot's own book) in the exclusion set sent with every Replace call
+
+### Exclusion List — Wishlist, Library, and Rejections (v115)
+- Previously, no exclusion data was ever sent to the AI at all — `_fnrBuildUserContext()` only sent top-rated/paused/highlight-density subsets of the library, and `wishlist` was never referenced, despite the prompt claiming it wouldn't repeat "reading history"
+- New `_fnrExcludedTitles()` builds a single deduplicated list from, in priority order: permanently rejected books → books rejected/replaced earlier in the current sitting → wishlist → library (any status). Deduplication happens before capping so a book counted in multiple tiers doesn't shrink the effective budget
+- Capped at 250 entries after dedupe; if truncation is needed, the ~30 top-rated library books are dropped first since they're already named separately in the taste-calibration profile block, and every other tier is preserved in full
+- New `_fnrBuildUserMessage()` shared by both `submitFindNextRead()` and `fnrReplaceResult()` so the exclusion list, message ordering, and variety token can't drift out of sync between the two call sites
+
+### Permanent Reject (v115)
+- New **Reject** button on each result card, distinct from Replace and Add to Wishlist. Marks the book as never-recommend-again by writing to a new `fnr_rejected_forever` meta key (not a new IndexedDB object store, so no DB version bump was needed) and leaves the slot's content untouched — getting a new book in that slot still requires a separate Replace tap
+- Rejected cards stay visible in a dimmed, struck-through state with the button flipped to **Undo**; Add to Wishlist is disabled on a rejected card so a book can't end up wishlisted and permanently excluded at the same time
+- `exportLibrary()` updated to include the rejection list via an explicit `dbGetMeta('fnr_rejected_forever')` call (same pattern as `waitlist-order`/`wishlist-order`), not a blanket meta dump — keeps AI keys out of exported files
+- Rejections are local-only by design, same convention as AI settings — not included in `syncToDrive()`'s payload, so they don't currently follow a user across devices
+
+### Prompt Rewrite (v115)
+`AI_PROMPTS.findNextRead` rewritten in a single pass (not staged edits, to avoid instructions getting silently dropped between passes):
+- Replaced the old prose "8-step scoring algorithm" — which referenced input labels (`topic_text`, `book_title`) that were never actually sent — with an explicit priority rule: the user's request (genre/topic/reference book/author/context) is the primary signal, and the reading-history profile is secondary flavor that must never override it. This was the main cause of off-genre results (e.g. a "Romance or relationships" request returning `Sapiens` or `Catch-22`) — the profile block, listing up to 30 books with quoted highlights, was placed *before* the actual request in the message sent to the AI
+- Message order in both `submitFindNextRead()` and `fnrReplaceResult()` changed to: request first, exclusion list second, reading-history profile last and explicitly labeled `TASTE CALIBRATION ONLY`
+- Added an anti-genericism instruction so the model stops defaulting to famous "canon" titles that don't actually match the request
+- Added a hallucination guardrail: only real, verifiable books, correct author and first-publication year, and to pick a different book entirely rather than guess when uncertain a title exists
+- Added a recency instruction, scoped to what's actually achievable: the AI proxy calls `gpt-4o`, whose knowledge cutoff is ~late 2023, so prompt-level recency weighting can realistically shift results from decades-old classics toward roughly the last several years — it cannot surface genuine 2025/2026 releases, and asking harder for "new" risks the model inventing titles that don't exist. The instruction backs off entirely when the request signals a classic/vintage preference (e.g. historical fiction, or "classic" in free text). Actual current-release support would require either a different model behind the proxy or a real candidate pool sourced from the Google Books API — not attempted here
+- Added a per-call variety token appended to the user message (instructed to be used only to vary which valid candidates surface, never mentioned in output) to stop the same input from converging on the same five books every time
 

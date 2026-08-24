@@ -915,8 +915,7 @@ async function loadHome() {
             </div>
             ${getMediumIcon(b.medium) ? `<span class="book-cover-medium">${getMediumIcon(b.medium)}</span>` : ''}
             ${b.rating && RATING_LABELS[b.rating] ? `<span class="book-cover-rating">${RATING_LABELS[b.rating].icon}</span>` : ''}
-          </div>`).join('')}</div>` +
-        renderStaleNudges(readingBooks));
+          </div>`).join('')}</div>`);
 
   renderDogEared();
 
@@ -948,45 +947,6 @@ async function loadHome() {
     waitlistContainer.appendChild(listEl);
     makeDraggableList(listEl, saveWaitlistOrder);
   }
-}
-
-function renderStaleNudges(readingBooks) {
-  const TEN_DAYS = 10 * 24 * 60 * 60 * 1000;
-  const now      = Date.now();
-  const stale    = readingBooks.filter(b => {
-    const lastEdit      = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-    const lastHighlight = highlights
-      .filter(h => h.bookId === b.id && h.savedAt)
-      .reduce((max, h) => Math.max(max, new Date(h.savedAt).getTime()), 0);
-    const lastActivity  = Math.max(lastEdit, lastHighlight);
-    return lastActivity === 0 || (now - lastActivity) > TEN_DAYS;
-  });
-  if (stale.length === 0) return '';
-
-  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
-  let message, arrowStyle = '';
-
-  if (stale.length === 1) {
-    const b   = stale[0];
-    const idx = readingBooks.indexOf(b);
-    const n   = readingBooks.length;
-    const pct = ((idx + 0.5) / n * 100).toFixed(1);
-    arrowStyle = `style="--arrow-left: calc(${pct}% - 6px)"`;
-    message = pick([
-      `📚 If <em>${escapeHtml(b.title)}</em> were a library book, you'd owe a fine by now!`,
-      `📚 Still reading <em>${escapeHtml(b.title)}</em>? No judgment. Actually, maybe a little bit.`,
-    ]);
-  } else {
-    message = pick([
-      '📚 Both books haven\'t heard from you in a while. They\'re starting to talk.',
-      '📚 Two books in progress, zero recent activity. The plot thickens — just not for you.',
-    ]);
-  }
-
-  return `<div class="stale-nudge${stale.length === 1 ? ' stale-nudge--arrow' : ''}" ${arrowStyle} onclick="this.remove()" title="Dismiss">
-    <span class="stale-nudge-text">${message}</span>
-    <span class="stale-nudge-dismiss">✕</span>
-  </div>`;
 }
 
 function renderDogEared(excludeId) {
