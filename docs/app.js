@@ -1262,7 +1262,7 @@ function debounceBookLookup(form) {
   if (title.length < 2) { sugEl.classList.add('hidden'); sugEl.innerHTML = ''; return; }
   sugEl.classList.remove('hidden');
   sugEl.innerHTML = '<p class="book-lookup-loading">Looking up…</p>';
-  _lookupTimer = setTimeout(() => fetchBookSuggestions(title, form), 500);
+  _lookupTimer = setTimeout(() => fetchBookSuggestions(title, form), 400);
 }
 
 function triggerEditBookLookup() {
@@ -1277,20 +1277,16 @@ function triggerEditBookLookup() {
 async function fetchBookSuggestions(title, form) {
   const sugEl = document.getElementById(_sugElId(form));
   if (!sugEl) return;
-  try {
-    const url = `https://openlibrary.org/search.json?title=${encodeURIComponent(title)}&limit=5&fields=title,author_name,subject,cover_i`;
-    const res  = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (!data.docs || data.docs.length === 0) {
-      sugEl.innerHTML = '<p class="book-lookup-loading">No results found.</p>';
-      return;
-    }
-    renderBookSuggestions(data.docs, form, sugEl);
-  } catch (err) {
+  const items = await googleBooksSearch(title, { maxResults: 5 });
+  if (items === null) {
     sugEl.innerHTML = '<p class="book-lookup-loading">Lookup failed.</p>';
-    console.error('Book lookup error:', err);
+    return;
   }
+  if (items.length === 0) {
+    sugEl.innerHTML = '<p class="book-lookup-loading">No results found.</p>';
+    return;
+  }
+  renderBookSuggestions(items, form, sugEl);
 }
 
 function renderBookSuggestions(items, form, sugEl) {
@@ -1298,7 +1294,7 @@ function renderBookSuggestions(items, form, sugEl) {
     const title  = item.title || '';
     const author = (item.author_name || []).join(', ');
     const cat    = mapCategory(item.subject);
-    const thumb  = item.cover_i ? `https://covers.openlibrary.org/b/id/${item.cover_i}-M.jpg` : '';
+    const thumb  = item.thumb || '';
     return `<div class="book-suggestion-card" onclick="applyBookSuggestion(${i}, '${form}')">
       ${thumb ? `<img class="book-sug-thumb" src="${thumb}" alt="">` : `<div class="book-sug-thumb book-sug-thumb-placeholder"></div>`}
       <div class="book-sug-info">
@@ -1314,7 +1310,7 @@ function renderBookSuggestions(items, form, sugEl) {
     title:    item.title || '',
     author:   (item.author_name || []).join(', '),
     category: mapCategory(item.subject),
-    coverUrl: item.cover_i ? `https://covers.openlibrary.org/b/id/${item.cover_i}-M.jpg` : '',
+    coverUrl: item.thumb || '',
   }));
 }
 
@@ -1990,30 +1986,50 @@ async function gbApiKeyParam() {
   return key ? `&key=${encodeURIComponent(key)}` : '';
 }
 
-async function fetchWishlistDescription(item) {
-  if (!navigator.onLine) return undefined;
-  const q = `intitle:${item.title}` + (item.author ? ` inauthor:${item.author}` : '');
-  const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1${await gbApiKeyParam()}`;
+// Shared Google Books search helper. Returns an array of normalized results
+// on success (empty array = no matches), or null on failure (offline,
+// network error, timeout, or non-OK response) so callers can distinguish
+// "nothing found" from "couldn't complete the lookup".
+async function googleBooksSearch(query, { maxResults = 5, field = null, timeout = 8000 } = {}) {
+  if (!navigator.onLine) return null;
+  const q = field ? `${field}:${query}` : query;
+  const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=${maxResults}${await gbApiKeyParam()}`;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  const timer = setTimeout(() => controller.abort(), timeout);
   try {
     const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) return undefined; // transient (e.g. rate limit) — retry later, don't mark checked
+    if (!res.ok) return null;
     const data = await res.json();
-    const raw  = data.items?.[0]?.volumeInfo?.description;
-    if (!raw) return null; // genuinely no description available
-    const clean = (window.DOMPurify
-      ? DOMPurify.sanitize(raw, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] })
-      : raw.replace(/<[^>]*>/g, '')).trim();
-    if (!clean) return null;
-    return clean.length > 700
-      ? clean.slice(0, 700).replace(/\s+\S*$/, '') + '…'
-      : clean;
+    return (data.items || []).map(it => {
+      const v = it.volumeInfo || {};
+      return {
+        title:       v.title || '',
+        author_name: v.authors || [],
+        subject:     v.categories || [],
+        description: v.description || '',
+        thumb:       (v.imageLinks?.thumbnail || '').replace(/^http:/, 'https:')
+      };
+    }).filter(r => r.title);
   } catch {
-    return undefined; // network error or timeout — retry later, don't mark checked
+    return null;
   } finally {
-    clearTimeout(timeoutId);
+    clearTimeout(timer);
   }
+}
+
+async function fetchWishlistDescription(item) {
+  const q = `intitle:${item.title}` + (item.author ? ` inauthor:${item.author}` : '');
+  const results = await googleBooksSearch(q, { maxResults: 1 });
+  if (results === null) return undefined; // transient (e.g. rate limit, offline) — retry later, don't mark checked
+  const raw = results[0]?.description;
+  if (!raw) return null; // genuinely no description available
+  const clean = (window.DOMPurify
+    ? DOMPurify.sanitize(raw, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] })
+    : raw.replace(/<[^>]*>/g, '')).trim();
+  if (!clean) return null;
+  return clean.length > 700
+    ? clean.slice(0, 700).replace(/\s+\S*$/, '') + '…'
+    : clean;
 }
 
 async function openWishlistDetail(id) {
@@ -3101,42 +3117,36 @@ async function _fnrFetchBooks(query) {
   const sugEl = document.getElementById('fnr-book-suggestions');
   sugEl.classList.remove('hidden');
   sugEl.innerHTML = '<p class="fnr-lookup-loading">Searching…</p>';
-  try {
-    const url  = `https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(query)}&maxResults=5${await gbApiKeyParam()}`;
-    const res  = await fetch(url);
-    const data = await res.json();
-    const items = (data.items || []).map(item => ({
-      title:  item.volumeInfo?.title || '',
-      author: (item.volumeInfo?.authors || []).join(', '),
-    })).filter(i => i.title);
-    if (!items.length) { sugEl.innerHTML = '<p class="fnr-lookup-loading">No results.</p>'; return; }
-    sugEl.innerHTML = items.map(i =>
-      `<div class="fnr-suggestion-item" onclick="fnrSelectBook('${i.title.replace(/'/g,"\\'")}','${i.author.replace(/'/g,"\\'")}')">
-        <span class="fnr-sug-title">${escapeHtml(i.title)}</span>
-        ${i.author ? `<span class="fnr-sug-author">${escapeHtml(i.author)}</span>` : ''}
-      </div>`).join('');
-  } catch { sugEl.innerHTML = '<p class="fnr-lookup-loading">Lookup failed.</p>'; }
+  const results = await googleBooksSearch(query, { maxResults: 5 });
+  if (results === null) { sugEl.innerHTML = '<p class="fnr-lookup-loading">Lookup failed.</p>'; return; }
+  const items = results.map(item => ({
+    title:  item.title || '',
+    author: (item.author_name || []).join(', '),
+  })).filter(i => i.title);
+  if (!items.length) { sugEl.innerHTML = '<p class="fnr-lookup-loading">No results.</p>'; return; }
+  sugEl.innerHTML = items.map(i =>
+    `<div class="fnr-suggestion-item" onclick="fnrSelectBook('${i.title.replace(/'/g,"\\'")}','${i.author.replace(/'/g,"\\'")}')">
+      <span class="fnr-sug-title">${escapeHtml(i.title)}</span>
+      ${i.author ? `<span class="fnr-sug-author">${escapeHtml(i.author)}</span>` : ''}
+    </div>`).join('');
 }
 
 async function _fnrFetchAuthors(query) {
   const sugEl = document.getElementById('fnr-author-suggestions');
   sugEl.classList.remove('hidden');
   sugEl.innerHTML = '<p class="fnr-lookup-loading">Searching…</p>';
-  try {
-    const url  = `https://www.googleapis.com/books/v1/volumes?q=inauthor:${encodeURIComponent(query)}&maxResults=8${await gbApiKeyParam()}`;
-    const res  = await fetch(url);
-    const data = await res.json();
-    const authors = [...new Set(
-      (data.items || [])
-        .flatMap(item => item.volumeInfo?.authors || [])
-        .filter(a => a.toLowerCase().includes(query.toLowerCase()))
-    )].slice(0, 5);
-    if (!authors.length) { sugEl.innerHTML = '<p class="fnr-lookup-loading">No results.</p>'; return; }
-    sugEl.innerHTML = authors.map(a =>
-      `<div class="fnr-suggestion-item" onclick="fnrSelectAuthor('${a.replace(/'/g,"\\'")}')">
-        <span class="fnr-sug-title">${escapeHtml(a)}</span>
-      </div>`).join('');
-  } catch { sugEl.innerHTML = '<p class="fnr-lookup-loading">Lookup failed.</p>'; }
+  const results = await googleBooksSearch(query, { maxResults: 8, field: 'inauthor' });
+  if (results === null) { sugEl.innerHTML = '<p class="fnr-lookup-loading">Lookup failed.</p>'; return; }
+  const authors = [...new Set(
+    results
+      .flatMap(item => item.author_name || [])
+      .filter(a => a.toLowerCase().includes(query.toLowerCase()))
+  )].slice(0, 5);
+  if (!authors.length) { sugEl.innerHTML = '<p class="fnr-lookup-loading">No results.</p>'; return; }
+  sugEl.innerHTML = authors.map(a =>
+    `<div class="fnr-suggestion-item" onclick="fnrSelectAuthor('${a.replace(/'/g,"\\'")}')">
+      <span class="fnr-sug-title">${escapeHtml(a)}</span>
+    </div>`).join('');
 }
 
 function fnrSelectBook(title, author) {
