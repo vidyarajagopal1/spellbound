@@ -1475,12 +1475,26 @@ function _populateBookSelect(filter) {
   const dropdown = document.getElementById('book-dropdown');
   if (filtered.length === 0) {
     dropdown.innerHTML = '<div class="book-dropdown-empty">No books found</div>';
-  } else {
-    dropdown.innerHTML = filtered.map(b =>
-      `<div class="book-dropdown-item" onclick="selectBookFromDropdown(${b.id}, '${b.title.replace(/'/g, "&#39;")}')">` +
-      `${escapeHtml(b.title)}</div>`
-    ).join('');
+    return;
   }
+  const itemHtml = b =>
+    `<div class="book-dropdown-item" onclick="selectBookFromDropdown(${b.id}, '${b.title.replace(/'/g, "&#39;")}')">` +
+    `${escapeHtml(b.title)}</div>`;
+  // When the search field is empty, group Reading books under a heading, above
+  // the rest of the alphabetical list. Any active filter drops the grouping.
+  if (!filter) {
+    const reading = filtered.filter(b => b.status === 'Reading');
+    if (reading.length > 0) {
+      const rest = filtered.filter(b => b.status !== 'Reading');
+      dropdown.innerHTML =
+        '<div class="book-dropdown-heading">Currently reading</div>' +
+        reading.map(itemHtml).join('') +
+        '<div class="book-dropdown-separator"></div>' +
+        rest.map(itemHtml).join('');
+      return;
+    }
+  }
+  dropdown.innerHTML = filtered.map(itemHtml).join('');
 }
 
 function filterBookSelect() {

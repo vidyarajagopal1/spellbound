@@ -1307,6 +1307,25 @@ main { min-height: 100%; }
   cursor: pointer;
 }
 .book-dropdown-item:hover { background: rgba(255,255,255,0.07); }
+.book-dropdown-heading {
+  padding: 8px 12px 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  cursor: default;
+  user-select: none;
+  pointer-events: none;
+}
+.book-dropdown-separator {
+  height: 1px;
+  margin: 4px 8px;
+  background: rgba(255,255,255,0.1);
+  cursor: default;
+  user-select: none;
+  pointer-events: none;
+}
 .book-dropdown-empty {
   padding: 10px 12px;
   font-size: 0.85rem;
