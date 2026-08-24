@@ -879,7 +879,7 @@ async function loadHome() {
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   document.getElementById('home-hero').innerHTML =
     `<p class="home-hero-greeting">${greeting}</p>` +
-    `<button class="dog-eared-add-btn" onclick="showAddBookForm()">Add New Book</button>`;
+    `<button class="home-primary-btn" onclick="showAddBookForm()">Add New Book</button>`;
 
   document.getElementById('reading-books').innerHTML =
     '<h2 class="home-section-title">Currently Reading</h2>' +
@@ -895,7 +895,7 @@ async function loadHome() {
             ${getMediumIcon(b.medium) ? `<span class="book-cover-medium">${getMediumIcon(b.medium)}</span>` : ''}
             ${b.rating && RATING_LABELS[b.rating] ? `<span class="book-cover-rating">${RATING_LABELS[b.rating].icon}</span>` : ''}
           </div>`).join('')}</div>`) +
-    `<button class="dog-eared-add-btn" onclick="showAddHighlightForm()">Add Highlight</button>`;
+    `<button class="home-outline-btn" onclick="showAddHighlightForm()">Add Highlight</button>`;
 
   renderDogEared();
 

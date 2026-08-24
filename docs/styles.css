@@ -237,6 +237,28 @@ main { min-height: 100%; }
   cursor: pointer;
 }
 .dog-eared-add-btn:active { opacity: 0.85; }
+.home-primary-btn {
+  background: var(--accent2);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.45rem 1rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.home-primary-btn:active { opacity: 0.85; }
+.home-outline-btn {
+  background: transparent;
+  color: var(--accent2);
+  border: 1.5px solid var(--accent2);
+  border-radius: var(--radius);
+  padding: 0.45rem 1rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.home-outline-btn:active { opacity: 0.7; }
 
 /* ─── HIGHLIGHT DETAIL VIEW ─────────────────────────────────────────────────── */
 .highlight-detail-actions {
