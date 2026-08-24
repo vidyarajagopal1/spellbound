@@ -883,7 +883,7 @@ async function loadHome() {
   document.getElementById('reading-books').innerHTML =
     '<h2 class="home-section-title">Currently Reading</h2>' +
     (readingBooks.length === 0
-      ? '<p class="home-empty">Once you add a book, this is where you\'ll find your way back to it.</p>'
+      ? '<p class="home-empty">All your current reads across formats show up here, once you mark them as Reading.</p>'
       : `<div class="home-covers">${readingBooks.map(b =>
           `<div class="book-cover" onclick="openBook(${b.id})" style="background-color:${getCoverColor(b.category)}">
             <div class="book-cover-spine"></div>
