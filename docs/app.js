@@ -1277,7 +1277,7 @@ function triggerEditBookLookup() {
 async function fetchBookSuggestions(title, form) {
   const sugEl = document.getElementById(_sugElId(form));
   if (!sugEl) return;
-  const items = await googleBooksSearch(title, { maxResults: 5, field: 'intitle' });
+  const items = await googleBooksSearch(title, { maxResults: 10, field: 'intitle' });
   if (items === null) {
     sugEl.innerHTML = '<p class="book-lookup-loading">Lookup failed.</p>';
     return;
@@ -1286,12 +1286,12 @@ async function fetchBookSuggestions(title, form) {
     sugEl.innerHTML = '<p class="book-lookup-loading">No results found.</p>';
     return;
   }
-  renderBookSuggestions(items, form, sugEl);
+  renderBookSuggestions(items.slice(0, 5), form, sugEl);
 }
 
 function renderBookSuggestions(items, form, sugEl) {
   const cards = items.map((item, i) => {
-    const title  = item.title || '';
+    const title  = item.fullTitle || item.title || '';
     const author = (item.author_name || []).join(', ');
     const cat    = mapCategory(item.subject);
     const thumb  = item.thumb || '';
@@ -2014,6 +2014,8 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, timeout 
         const v = it.volumeInfo || {};
         return {
           title:       v.title || '',
+          subtitle:    v.subtitle || '',
+          fullTitle:   v.subtitle ? `${v.title}: ${v.subtitle}` : (v.title || ''),
           author_name: v.authors || [],
           subject:     v.categories || [],
           description: v.description || '',
@@ -2026,9 +2028,20 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, timeout 
       clearTimeout(timer);
     }
   };
-  const results = await runQuery(q);
+  let results = await runQuery(q);
   if (field && results !== null && results.length === 0) {
-    return await runQuery(`${field}:${cleaned}`);
+    results = await runQuery(`${field}:${cleaned}`);
+  }
+  if (field && results !== null && results.length > 0) {
+    const nq = normalizeBookQuery(query).toLowerCase();
+    const score = r => {
+      const t = normalizeBookQuery(r.fullTitle).toLowerCase();
+      if (t === nq) return 0;
+      if (t.startsWith(nq)) return 1;
+      if (t.split(' ').some(w => w.startsWith(nq))) return 2;
+      return 3;
+    };
+    results.sort((a, b) => score(a) - score(b));
   }
   return results;
 }
@@ -3133,16 +3146,17 @@ async function _fnrFetchBooks(query) {
   const sugEl = document.getElementById('fnr-book-suggestions');
   sugEl.classList.remove('hidden');
   sugEl.innerHTML = '<p class="fnr-lookup-loading">Searching…</p>';
-  const results = await googleBooksSearch(query, { maxResults: 5, field: 'intitle' });
+  const results = await googleBooksSearch(query, { maxResults: 10, field: 'intitle' });
   if (results === null) { sugEl.innerHTML = '<p class="fnr-lookup-loading">Lookup failed.</p>'; return; }
   const items = results.map(item => ({
-    title:  item.title || '',
-    author: (item.author_name || []).join(', '),
-  })).filter(i => i.title);
+    title:     item.title || '',
+    fullTitle: item.fullTitle || item.title || '',
+    author:    (item.author_name || []).join(', '),
+  })).filter(i => i.title).slice(0, 5);
   if (!items.length) { sugEl.innerHTML = '<p class="fnr-lookup-loading">No results.</p>'; return; }
   sugEl.innerHTML = items.map(i =>
     `<div class="fnr-suggestion-item" onclick="fnrSelectBook('${i.title.replace(/'/g,"\\'")}','${i.author.replace(/'/g,"\\'")}')">
-      <span class="fnr-sug-title">${escapeHtml(i.title)}</span>
+      <span class="fnr-sug-title">${escapeHtml(i.fullTitle)}</span>
       ${i.author ? `<span class="fnr-sug-author">${escapeHtml(i.author)}</span>` : ''}
     </div>`).join('');
 }
