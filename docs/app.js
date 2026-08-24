@@ -877,30 +877,8 @@ async function loadHome() {
 
   const hour     = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const n        = readingBooks.length;
-  const pick     = arr => arr[Math.floor(Math.random() * arr.length)];
-  const heroMsg  = n === 0
-    ? pick([
-        'Books don\'t read themselves. Allegedly.',
-        'Your TBR pile is judging you.',
-        'No books in progress. Bold strategy.',
-        'The shelf awaits. Patiently. Resentfully.',
-      ])
-    : n === 1
-    ? pick([
-        'Just the one. Suspicious.',
-        'One book. Focused or indecisive? We\'ll never know.',
-        'Flying solo. Respect.',
-        'Single-book mode. Rare. Impressive.',
-      ])
-    : pick([
-        `Juggling ${spellNum(n)} books. Very on-brand.`,
-        `${spellNum(n)[0].toUpperCase() + spellNum(n).slice(1)} books in progress. Commitment can sometimes be complicated.`,
-        `${spellNum(n)[0].toUpperCase() + spellNum(n).slice(1)} books. You love a good plot twist — including in your reading list.`,
-        `${spellNum(n)[0].toUpperCase() + spellNum(n).slice(1)} books open. Make sure you're doing them both justice!`,
-      ]);
   document.getElementById('home-hero').innerHTML =
-    `<p class="home-hero-greeting">${greeting}</p><p class="home-hero-message">${heroMsg}</p>`;
+    `<p class="home-hero-greeting">${greeting}</p>`;
 
   document.getElementById('reading-books').innerHTML =
     '<h2 class="home-section-title">Currently Reading</h2>' +
@@ -965,7 +943,7 @@ function renderDogEared(excludeId) {
   if (showEmpty) {
     container.innerHTML = heading + `
       <div class="dog-eared-empty">
-        <p class="dog-eared-empty-quote">&ldquo;There is no friend as loyal as a book.<br>And you didn&rsquo;t save a single thing it said? 💔&rdquo;</p>
+        <p class="home-empty">No highlights saved yet.</p>
         <button class="dog-eared-add-btn" onclick="showAddHighlightForm()">Add Highlight</button>
       </div>`;
     return;
