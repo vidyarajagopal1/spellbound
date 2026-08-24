@@ -633,3 +633,50 @@ Books and wishlist items pulled in from a Goodreads CSV import are now categoris
 - Re-added "Clear categories on original Goodreads import" to the Settings → Data section, between Import and Re-sort, styled with the same `.settings-btn-outline` treatment as the other secondary actions
 - Description shortened to one line: "One-off fix for the batch imported before AI categorisation existed."
 
+---
+
+| Version | Changes |
+|---|---|
+| v103 | Proxy support for AI calls via an access code, so most users never need their own API key |
+| v104 | Default built-in access code with API key override precedence in Settings |
+| v105 | Wishlist: tap opens a read-only detail view instead of the edit form directly |
+| v106 | Wishlist detail: Google Books external link; real AI error surfaced in Find Your Next Read; cache bump to actually serve the change |
+| v107 | Google Books description auto-lookup for wishlist items |
+| v108 | Wishlist description lookup: don't mark "checked" on rate-limit/network failures; added retry button |
+| v109 | Fixed stuck "Looking this up…" state: added fetch timeout, shows retry after a failed attempt instead of looping silently |
+| v110 | Baked-in default Google Books API key (with Settings override) to reduce anonymous quota failures |
+| v111 | Consolidated all Google Books calls behind a shared `googleBooksSearch()` helper; dropped Open Library entirely |
+| v112 | Restored `intitle`/`inauthor` field search with quoted-then-unquoted fallback and punctuation normalization |
+| v113 | Book suggestions show full title with subtitle; results re-ranked by title-match relevance |
+| v114 | Title lookups narrowed by the author field when filled in, with graceful fallback if that returns nothing |
+
+---
+
+## AI Access Code + Proxy Support (v103–v104)
+- **Proxy support (v103)**: AI calls can now route through a proxy using a shared **access code** instead of requiring each user to supply their own OpenAI/Claude API key
+- **Default access code (v104)**: a pre-configured access code ships with the app so AI features work out of the box; Settings → AI Assistant lets a user override it with their own code, and a separately-provided API key still takes precedence over both when present
+- Settings UI updated with a password-style access code field (`settings-ai-access-code`) with a show/hide toggle, alongside the existing provider and API key fields
+
+## Wishlist Detail View + Google Books Link (v105–v106)
+- Tapping a wishlist item now opens a **read-only detail view** (`wishlist-detail-view`) instead of jumping straight into the edit form — matches the pattern already used for highlights
+- Detail view adds a link out to the book's Google Books page
+- Find Your Next Read now surfaces the actual AI error message on failure instead of a generic message
+- v106 was a cache-only bump to ensure the Google Books link change actually reached clients after v105 shipped
+
+## Wishlist Description Auto-Lookup (v107–v109)
+- Wishlist items automatically fetch a short description from Google Books (`intitle:`/`inauthor:` query) the first time their detail view is opened, and cache the result so it isn't re-fetched
+- **v108 fix**: transient failures (rate-limit/network errors) no longer permanently mark the item as "checked" with no description — a retry button appears so the user can try again later instead of losing the description forever
+- **v109 fix**: the lookup could get stuck showing "Looking this up…" indefinitely on a hung request. Added an `AbortController`-based timeout to `googleBooksSearch()` calls, and a failed attempt now shows a retry affordance instead of silently looping
+
+## Google Books Consolidation (v110–v113)
+- **v110**: added a baked-in default Google Books API key (`GOOGLE_BOOKS_KEY`) as a fallback so anonymous quota exhaustion (429s) stops breaking lookups for most users; still overridable via Settings → Book Lookup
+- **v111**: replaced the separate Open Library code path entirely — all book search/description lookups (Add/Edit/Wishlist title lookup, Find Your Next Read autocomplete, wishlist description) now go through one shared `googleBooksSearch(query, { maxResults, field, timeout })` helper
+- **v112**: restored precise `intitle:`/`inauthor:` field-scoped search (lost in the v111 consolidation) with a quoted-query-first, unquoted-fallback retry strategy, plus `normalizeBookQuery()` to strip quotes/apostrophes and normalize other punctuation to spaces before querying
+- **v113**: book suggestion cards now show the full title including subtitle (`fullTitle`); results are re-ranked by relevance (exact match → starts-with → word-starts-with → other) via a stable sort, with suggestions capped at the top 5 of up to 10 fetched
+
+## Author-Narrowed Title Lookups (v114)
+- `googleBooksSearch()` accepts an `author` option — when searching by `field: 'intitle'` with an author present, appends `inauthor:"cleanedAuthor"` to both the quoted and unquoted query attempts, so a common title word (e.g. "Held") doesn't return unrelated results once an author is filled in
+- If the author-narrowed search comes back empty after both attempts, it retries once more without the author clause — author narrows results but never eliminates them entirely
+- New `_authorElId(form)` helper (mirroring `_titleElId()`) resolves the author input id per form (`book-author-input` / `wishlist-author-input` / `edit-book-author`)
+- `fetchBookSuggestions(title, form)` reads the author field via `_authorElId(form)` and passes it through automatically — `triggerEditBookLookup()` picks this up for free since it delegates to `fetchBookSuggestions`
+
