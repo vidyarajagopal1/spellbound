@@ -117,18 +117,17 @@ main { min-height: 100%; }
 
 /* ─── HOME ──────────────────────────────────────────────────────────────────── */
 .home-hero {
-  background: linear-gradient(135deg, rgba(34,56,44,0.9) 0%, rgba(26,40,32,0.6) 100%);
-  border-radius: var(--radius);
-  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
   margin-bottom: 1.25rem;
-  border-left: 4px solid var(--accent2);
 }
 .home-hero-greeting {
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: var(--accent2);
-  margin-bottom: 4px;
 }
 .home-hero-message {
   font-size: 0.8rem;
@@ -238,25 +237,35 @@ main { min-height: 100%; }
 }
 .dog-eared-add-btn:active { opacity: 0.85; }
 .home-primary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
   background: var(--accent2);
   color: var(--bg);
   border: none;
   border-radius: var(--radius);
-  padding: 0.45rem 1rem;
+  padding: 0.5rem 1.1rem;
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
 }
 .home-primary-btn:active { opacity: 0.85; }
 .home-outline-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
   background: transparent;
   color: var(--accent2);
   border: 1.5px solid var(--accent2);
   border-radius: var(--radius);
-  padding: 0.45rem 1rem;
+  padding: 0.5rem 1.1rem;
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
 }
 .home-outline-btn:active { opacity: 0.7; }
 
