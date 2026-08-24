@@ -878,7 +878,8 @@ async function loadHome() {
   const hour     = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   document.getElementById('home-hero').innerHTML =
-    `<p class="home-hero-greeting">${greeting}</p>`;
+    `<p class="home-hero-greeting">${greeting}</p>` +
+    `<button class="dog-eared-add-btn" onclick="showAddBookForm()">Add New Book</button>`;
 
   document.getElementById('reading-books').innerHTML =
     '<h2 class="home-section-title">Currently Reading</h2>' +
@@ -893,7 +894,8 @@ async function loadHome() {
             </div>
             ${getMediumIcon(b.medium) ? `<span class="book-cover-medium">${getMediumIcon(b.medium)}</span>` : ''}
             ${b.rating && RATING_LABELS[b.rating] ? `<span class="book-cover-rating">${RATING_LABELS[b.rating].icon}</span>` : ''}
-          </div>`).join('')}</div>`);
+          </div>`).join('')}</div>`) +
+    `<button class="dog-eared-add-btn" onclick="showAddHighlightForm()">Add Highlight</button>`;
 
   renderDogEared();
 
@@ -941,7 +943,6 @@ function renderDogEared(excludeId) {
     container.innerHTML = heading + `
       <div class="dog-eared-empty">
         <p class="home-empty">The Highlights you save will surface here as easter eggs every time you come back.</p>
-        <button class="dog-eared-add-btn" onclick="showAddHighlightForm()">Add Highlight</button>
       </div>`;
     return;
   }
