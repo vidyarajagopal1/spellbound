@@ -1253,6 +1253,12 @@ function _titleElId(form) {
   return 'edit-book-title';
 }
 
+function _authorElId(form) {
+  if (form === 'add')      return 'book-author-input';
+  if (form === 'wishlist') return 'wishlist-author-input';
+  return 'edit-book-author';
+}
+
 function debounceBookLookup(form) {
   clearTimeout(_lookupTimer);
   const titleEl = document.getElementById(_titleElId(form));
@@ -1277,7 +1283,9 @@ function triggerEditBookLookup() {
 async function fetchBookSuggestions(title, form) {
   const sugEl = document.getElementById(_sugElId(form));
   if (!sugEl) return;
-  const items = await googleBooksSearch(title, { maxResults: 10, field: 'intitle' });
+  const authorEl = document.getElementById(_authorElId(form));
+  const author = authorEl ? authorEl.value.trim() : '';
+  const items = await googleBooksSearch(title, { maxResults: 10, field: 'intitle', author: author || null });
   if (items === null) {
     sugEl.innerHTML = '<p class="book-lookup-loading">Lookup failed.</p>';
     return;
@@ -1998,10 +2006,12 @@ function normalizeBookQuery(s) {
     .trim();
 }
 
-async function googleBooksSearch(query, { maxResults = 5, field = null, timeout = 8000 } = {}) {
+async function googleBooksSearch(query, { maxResults = 5, field = null, author = null, timeout = 8000 } = {}) {
   if (!navigator.onLine) return null;
   const cleaned = normalizeBookQuery(query);
-  const q = field ? `${field}:"${cleaned}"` : query;
+  const cleanedAuthor = author ? normalizeBookQuery(author) : '';
+  let q = field ? `${field}:"${cleaned}"` : query;
+  if (field && cleanedAuthor) q += ` inauthor:"${cleanedAuthor}"`;
   const runQuery = async (q) => {
     const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=${maxResults}${await gbApiKeyParam()}`;
     const controller = new AbortController();
@@ -2030,7 +2040,15 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, timeout 
   };
   let results = await runQuery(q);
   if (field && results !== null && results.length === 0) {
-    results = await runQuery(`${field}:${cleaned}`);
+    let unquoted = `${field}:${cleaned}`;
+    if (cleanedAuthor) unquoted += ` inauthor:"${cleanedAuthor}"`;
+    results = await runQuery(unquoted);
+  }
+  if (field && cleanedAuthor && results !== null && results.length === 0) {
+    results = await runQuery(`${field}:"${cleaned}"`);
+    if (results !== null && results.length === 0) {
+      results = await runQuery(`${field}:${cleaned}`);
+    }
   }
   if (field && results !== null && results.length > 0) {
     const nq = normalizeBookQuery(query).toLowerCase();
