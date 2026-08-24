@@ -929,10 +929,7 @@ async function loadHome() {
 
 function renderDogEared(excludeId) {
   const container = document.getElementById('dog-eared');
-  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const hasSavedAt   = highlights.some(h => h.savedAt);
-  const hasRecent    = highlights.some(h => h.savedAt && new Date(h.savedAt).getTime() > sevenDaysAgo);
-  const showEmpty    = highlights.length === 0 || (hasSavedAt && !hasRecent);
+  const showEmpty  = highlights.length === 0;
 
   const heading = `
     <div class="dog-eared-header">
