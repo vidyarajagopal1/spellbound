@@ -241,9 +241,9 @@ main { min-height: 100%; }
   align-items: center;
   justify-content: center;
   align-self: flex-start;
-  background: transparent;
+  background: var(--surface2);
   color: var(--accent2);
-  border: 1.5px solid var(--accent2);
+  border: 1.5px solid transparent;
   border-radius: var(--radius);
   padding: 0.5rem 1.1rem;
   font-size: 0.82rem;
@@ -251,7 +251,7 @@ main { min-height: 100%; }
   cursor: pointer;
   white-space: nowrap;
 }
-.home-primary-btn:active { opacity: 0.7; }
+.home-primary-btn:active { opacity: 0.8; }
 .home-outline-btn {
   display: inline-flex;
   align-items: center;
