@@ -1985,10 +1985,15 @@ async function loadWishlist() {
   makeDraggableList(listEl, saveWishlistOrder);
 }
 
+async function gbApiKeyParam() {
+  const key = (await dbGetMeta('gb_api_key')) || GOOGLE_BOOKS_KEY;
+  return key ? `&key=${encodeURIComponent(key)}` : '';
+}
+
 async function fetchWishlistDescription(item) {
   if (!navigator.onLine) return undefined;
   const q = `intitle:${item.title}` + (item.author ? ` inauthor:${item.author}` : '');
-  const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1`;
+  const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1${await gbApiKeyParam()}`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
@@ -2616,6 +2621,10 @@ function _resetOcrSection() {
 // with no setup. Users can override it with their own code in Settings.
 const DEFAULT_ACCESS_CODE = 'spellbound-cohort-1';
 
+// Shared Google Books API key baked into the app so book lookups work out of
+// the box with no setup. Users can override it with their own key in Settings.
+const GOOGLE_BOOKS_KEY = 'AIzaSyAmZq6YhbhIKqa4v15bWVO8r0m7wtHb_0s';
+
 /**
  * Core AI call. If the user has entered their own API key in Settings, calls
  * OpenAI or Anthropic directly with that key. Otherwise routes through the
@@ -3093,7 +3102,7 @@ async function _fnrFetchBooks(query) {
   sugEl.classList.remove('hidden');
   sugEl.innerHTML = '<p class="fnr-lookup-loading">Searching…</p>';
   try {
-    const url  = `https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(query)}&maxResults=5`;
+    const url  = `https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(query)}&maxResults=5${await gbApiKeyParam()}`;
     const res  = await fetch(url);
     const data = await res.json();
     const items = (data.items || []).map(item => ({
@@ -3114,7 +3123,7 @@ async function _fnrFetchAuthors(query) {
   sugEl.classList.remove('hidden');
   sugEl.innerHTML = '<p class="fnr-lookup-loading">Searching…</p>';
   try {
-    const url  = `https://www.googleapis.com/books/v1/volumes?q=inauthor:${encodeURIComponent(query)}&maxResults=8`;
+    const url  = `https://www.googleapis.com/books/v1/volumes?q=inauthor:${encodeURIComponent(query)}&maxResults=8${await gbApiKeyParam()}`;
     const res  = await fetch(url);
     const data = await res.json();
     const authors = [...new Set(
@@ -4539,12 +4548,15 @@ async function loadSettings() {
   const provider   = await dbGetMeta('ai_provider')    || 'openai';
   const key        = await dbGetMeta('ai_api_key')     || '';
   const accessCode = await dbGetMeta('ai_access_code') || '';
+  const gbApiKey   = await dbGetMeta('gb_api_key')     || '';
   const providerEl    = document.getElementById('settings-ai-provider');
   const keyEl         = document.getElementById('settings-ai-key');
   const accessCodeEl  = document.getElementById('settings-ai-access-code');
+  const gbKeyEl       = document.getElementById('settings-gb-api-key');
   if (providerEl)   providerEl.value   = provider;
   if (keyEl)        keyEl.value        = key;
   if (accessCodeEl) accessCodeEl.value = accessCode;
+  if (gbKeyEl)      gbKeyEl.value      = gbApiKey;
   const msg = document.getElementById('settings-save-msg');
   if (msg) { msg.textContent = ''; msg.classList.add('hidden'); }
 }
@@ -4553,11 +4565,13 @@ async function saveSettings() {
   const provider   = document.getElementById('settings-ai-provider').value;
   const key        = document.getElementById('settings-ai-key').value.trim();
   const accessCode = document.getElementById('settings-ai-access-code').value.trim();
+  const gbApiKey   = document.getElementById('settings-gb-api-key').value.trim();
   const msg        = document.getElementById('settings-save-msg');
 
   await dbSetMeta('ai_provider',    provider);
   await dbSetMeta('ai_api_key',     key);
   await dbSetMeta('ai_access_code', accessCode);
+  await dbSetMeta('gb_api_key',     gbApiKey);
 
   msg.textContent = 'Settings saved.';
   msg.classList.remove('hidden', 'error');
@@ -4580,6 +4594,19 @@ function toggleApiKeyVisibility() {
 function toggleAccessCodeVisibility() {
   const input = document.getElementById('settings-ai-access-code');
   const eye   = document.getElementById('settings-access-code-eye');
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    eye.className = 'ph-bold ph-eye-slash';
+  } else {
+    input.type = 'password';
+    eye.className = 'ph-bold ph-eye';
+  }
+}
+
+function toggleGbApiKeyVisibility() {
+  const input = document.getElementById('settings-gb-api-key');
+  const eye   = document.getElementById('settings-gb-key-eye');
   if (!input) return;
   if (input.type === 'password') {
     input.type = 'text';
