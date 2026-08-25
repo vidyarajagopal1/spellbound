@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=128">
+  <link rel="stylesheet" href="styles.css?v=129">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
@@ -666,15 +666,20 @@
   <!-- Welcome Modal -->
   <div id="welcome-modal" class="modal-overlay hidden">
     <div class="modal-box welcome-modal-box">
-      <h2 class="welcome-modal-title">Spellbound</h2>
-      <p class="welcome-modal-tagline">A reading journal to stow away all your favourite books and the rabbit holes they led you down</p>
-      <div class="welcome-modal-option">
-        <p class="welcome-modal-question">Already have a bookshelf on Goodreads?</p>
-        <button type="button" class="welcome-modal-goodreads-btn" onclick="welcomeImportFromGoodreads()">Import from Goodreads</button>
+      <div class="welcome-modal-logo">
+        <img src="logo-header.png" class="welcome-modal-logo-img" alt="SpellBound logo">
+        <span class="welcome-modal-logo-text">SpellBound</span>
       </div>
-      <div class="welcome-modal-option">
-        <p class="welcome-modal-question">Prefer to start fresh?</p>
-        <button type="button" class="welcome-modal-continue-btn" onclick="closeWelcomeModal()">Continue</button>
+      <p class="welcome-modal-tagline">A reading journal to stow away all your favourite books and the rabbit holes they led you down</p>
+      <div class="welcome-modal-options">
+        <div class="welcome-modal-option">
+          <p class="welcome-modal-question">Already have a bookshelf on Goodreads?</p>
+          <button type="button" class="welcome-modal-option-btn" onclick="welcomeImportFromGoodreads()">Import from Goodreads</button>
+        </div>
+        <div class="welcome-modal-option">
+          <p class="welcome-modal-question">Prefer to start fresh?</p>
+          <button type="button" class="welcome-modal-option-btn" onclick="closeWelcomeModal()">Continue</button>
+        </div>
       </div>
     </div>
   </div>
@@ -709,7 +714,7 @@
   <script src="purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="app.js?v=128"></script>
+  <script src="app.js?v=129"></script>
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 
