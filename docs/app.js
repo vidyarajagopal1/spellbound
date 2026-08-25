@@ -4736,6 +4736,17 @@ function toggleGbApiKeyVisibility() {
   }
 }
 
+// ─── WELCOME MODAL ────────────────────────────────────────────────────────────
+function showWelcomeModal() {
+  document.getElementById('welcome-modal').classList.remove('hidden');
+}
+function closeWelcomeModal() {
+  document.getElementById('welcome-modal').classList.add('hidden');
+}
+function welcomeImportFromGoodreads() {
+  // TODO: wire up Goodreads import from the welcome screen.
+}
+
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 async function boot() {
   await openDB();
@@ -4743,6 +4754,7 @@ async function boot() {
   initializeForms();
   initVoice();
   showView('home');
+  if (books.length === 0) showWelcomeModal();
   document.addEventListener('click', e => {
     const combobox = document.getElementById('book-combobox');
     if (combobox && !combobox.contains(e.target)) _closeBookDropdown();

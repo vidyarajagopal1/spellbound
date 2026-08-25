@@ -2916,6 +2916,61 @@ main { min-height: 100%; }
   justify-content: center;
 }
 
+/* ─── WELCOME MODAL ──────────────────────────────────────────────────────────── */
+.welcome-modal-box {
+  align-items: center;
+  text-align: center;
+  gap: 20px;
+  padding: 32px 24px;
+}
+.welcome-modal-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: var(--accent2);
+}
+.welcome-modal-tagline {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.welcome-modal-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.welcome-modal-question {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.welcome-modal-goodreads-btn {
+  width: 100%;
+  background: transparent;
+  color: var(--accent2);
+  border: 1.5px solid var(--accent2);
+  border-radius: var(--radius);
+  padding: 0.6rem 1.1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.welcome-modal-goodreads-btn:active { opacity: 0.7; }
+.welcome-modal-continue-btn {
+  width: 100%;
+  background: var(--surface2);
+  color: var(--accent2);
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  padding: 0.6rem 1.1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.welcome-modal-continue-btn:active { opacity: 0.8; }
+
 /* ─── GOODREADS IMPORT CONFIRMATION ──────────────────────────────────────────── */
 .gr-confirm-stats {
   display: flex;
