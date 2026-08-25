@@ -3011,6 +3011,7 @@ main { min-height: 100%; }
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--accent2);
+  margin-bottom: 12px;
 }
 .welcome-modal-gr-help {
   display: flex;
@@ -3028,7 +3029,7 @@ main { min-height: 100%; }
 .welcome-modal-gr-help-text {
   font-size: 0.72rem;
   line-height: 1.55;
-  color: var(--text-muted);
+  color: var(--text);
   opacity: 0.85;
 }
 .welcome-modal-gr-help p:nth-of-type(3) {
@@ -3040,18 +3041,18 @@ main { min-height: 100%; }
   opacity: 1;
 }
 .welcome-modal-gr-back-btn {
-  width: 100%;
+  display: inline-block;
+  width: auto;
   background: transparent;
-  color: var(--accent2);
-  border: 1.5px solid var(--accent2);
-  border-radius: var(--radius);
-  padding: 0.6rem 1.1rem;
-  font-size: 0.85rem;
-  font-weight: 600;
+  color: var(--text-muted);
+  border: none;
+  padding: 0.3rem 0;
+  font-size: 0.75rem;
+  font-weight: 500;
   cursor: pointer;
   text-decoration: none;
 }
-.welcome-modal-gr-back-btn:active { opacity: 0.7; }
+.welcome-modal-gr-back-btn:active { opacity: 0.6; }
 
 /* ─── GOODREADS IMPORT CONFIRMATION ──────────────────────────────────────────── */
 .gr-confirm-stats {
