@@ -2980,9 +2980,9 @@ main { min-height: 100%; }
   width: 100%;
 }
 .welcome-modal-question {
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   font-weight: 400;
-  color: var(--text-muted);
+  color: var(--text);
 }
 .welcome-modal-option-btn {
   width: 100%;
