@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=136">
+  <link rel="stylesheet" href="styles.css?v=137">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
@@ -630,6 +630,10 @@
               <p class="settings-action-desc">Assign categories to books that don't have one.</p>
               <p id="settings-resort-progress" class="gr-import-progress hidden"></p>
             </div>
+            <div class="settings-action">
+              <button class="settings-btn-outline" onclick="openQuest()"><i class="ph-bold ph-compass"></i> Start Quest (dev preview)</button>
+              <p class="settings-action-desc">Temporary test entry for the in-progress first-run quest shell. Remove once real trigger logic ships.</p>
+            </div>
           </div>
         </section>
       </div>
@@ -728,9 +732,20 @@
   <script src="purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="app.js?v=136"></script>
+  <script src="app.js?v=137"></script>
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+
+  <!-- Quest Overlay (first-run quest shell — see docs/quest-copy.md) -->
+  <div id="quest-overlay" class="build-overlay hidden">
+    <div class="build-header">
+      <span class="build-step-indicator" id="quest-step-indicator">Quest</span>
+      <button class="build-close-btn" onclick="closeQuest()" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="quest-progress" id="quest-progress"></div>
+    <div class="build-body" id="quest-body"></div>
+    <div class="quest-pile-bar" id="quest-pile-bar"></div>
+  </div>
 
   <!-- Build Essay Full-Screen Overlay -->
   <div id="build-essay-overlay" class="build-overlay hidden">

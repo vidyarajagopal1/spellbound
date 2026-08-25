@@ -4767,6 +4767,128 @@ function welcomeUploadGoodreadsFile() {
   importGoodreads();
 }
 
+// ─── QUEST (FIRST-RUN) SHELL ───────────────────────────────────────────────────
+// Container only — see docs/quest-copy.md for the full spec. Stage content
+// (Stages 1–6, Find Your Next Read) is built in later steps of the build
+// order and is intentionally left as placeholders here.
+
+const QUEST_STAGE_COUNT = 6; // stage 0 = intro, 1–6 = stages, 7 = Find Your Next Read
+let _questState = null;
+
+function _newQuestState() {
+  return { stage: 0, pileIds: [] };
+}
+
+async function openQuest() {
+  _questState = await dbGetMeta('quest_state');
+  if (!_questState) _questState = _newQuestState();
+  document.getElementById('quest-overlay').classList.remove('hidden');
+  renderQuestStage();
+}
+
+function closeQuest() {
+  document.getElementById('quest-overlay').classList.add('hidden');
+}
+
+async function _saveQuestState() {
+  if (_questState) await dbSetMeta('quest_state', _questState);
+}
+
+function questGoToStage(stage) {
+  if (!_questState) return;
+  _questState.stage = stage;
+  _saveQuestState();
+  renderQuestStage();
+}
+
+async function questAddBookToPile(bookId) {
+  if (!_questState || _questState.pileIds.includes(bookId)) return;
+  _questState.pileIds.push(bookId);
+  await _saveQuestState();
+  renderQuestPile();
+}
+
+async function questRemoveFromPile(bookId) {
+  if (!_questState) return;
+  _questState.pileIds = _questState.pileIds.filter(id => id !== bookId);
+  await _saveQuestState();
+  renderQuestPile();
+}
+
+function renderQuestStage() {
+  if (!_questState) return;
+  const indicator = document.getElementById('quest-step-indicator');
+  const progress  = document.getElementById('quest-progress');
+  const body      = document.getElementById('quest-body');
+  if (!body) return;
+
+  const { stage } = _questState;
+  if (indicator) {
+    indicator.textContent = stage === 0 ? 'Quest'
+      : stage > QUEST_STAGE_COUNT ? 'Find Your Next Read'
+      : `Stage ${stage} of ${QUEST_STAGE_COUNT}`;
+  }
+
+  if (progress) {
+    progress.innerHTML = (stage === 0 || stage > QUEST_STAGE_COUNT)
+      ? ''
+      : Array.from({ length: QUEST_STAGE_COUNT }, (_, i) => {
+          const n   = i + 1;
+          const cls = n === stage ? 'active' : n < stage ? 'done' : '';
+          return `<span class="quest-progress-dot ${cls}"></span>`;
+        }).join('');
+  }
+
+  // Placeholder body so the shell can be exercised end to end before any
+  // real stage content exists.
+  body.innerHTML = `
+    <div class="build-step">
+      <p class="build-prompt-small">Stage ${stage} placeholder — content not built yet.</p>
+      <div class="build-nav">
+        ${stage > 0 ? `<button class="build-next-btn" onclick="questGoToStage(${stage - 1})">&larr; Back</button>` : ''}
+        ${stage < QUEST_STAGE_COUNT + 1 ? `<button class="build-next-btn" onclick="questGoToStage(${stage + 1})">Next &rarr;</button>` : ''}
+      </div>
+    </div>`;
+
+  renderQuestPile();
+}
+
+// Shared pile component — a filtered view of the library showing only books
+// added to the pile during this quest session. Reuses the same spine markup
+// as the Books view. Tapping a spine removes it from the pile.
+function renderQuestPile() {
+  const bar = document.getElementById('quest-pile-bar');
+  if (!bar || !_questState) return;
+  const pileBooks = _questState.pileIds.map(id => books.find(b => b.id === id)).filter(Boolean);
+
+  if (pileBooks.length === 0) {
+    bar.innerHTML = '<p class="quest-pile-empty">Your pile is empty.</p>';
+    return;
+  }
+
+  const spinesHtml = pileBooks.map((b, i) => {
+    const color  = getCoverColor(b.category);
+    const medium = getMediumIcon(b.medium);
+    const zIdx   = pileBooks.length - i;
+    const { angle, shift } = spineTransformOffset(b.id);
+    const authorHtml = b.author
+      ? `<span class="spine-sep">·</span><span class="spine-author">${escapeHtml(b.author)}</span>`
+      : '';
+    const mediumHtml = medium ? `<span class="spine-medium">${medium}</span>` : '';
+    return `
+      <div class="book-spine" onclick="questRemoveFromPile(${b.id})"
+           style="--spine-bg:${color};transform:rotate(${angle}deg) translateX(${shift}px);z-index:${zIdx}">
+        <div class="spine-body">
+          <span class="spine-title">${escapeHtml(b.title)}</span>
+          ${authorHtml}
+        </div>
+        ${mediumHtml}
+      </div>`;
+  }).join('');
+
+  bar.innerHTML = `<div class="pile-stack">${spinesHtml}</div>`;
+}
+
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 async function boot() {
   await openDB();

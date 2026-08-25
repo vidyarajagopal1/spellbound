@@ -826,6 +826,46 @@ main { min-height: 100%; }
   align-items: center;
 }
 
+/* ─── QUEST OVERLAY (first-run quest shell) ────────────────────────────────── */
+.quest-progress {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 0.9rem 1rem 0;
+  flex-shrink: 0;
+}
+.quest-progress-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.15);
+  transition: background 0.2s, transform 0.2s;
+}
+.quest-progress-dot.active {
+  background: var(--accent2);
+  transform: scale(1.3);
+}
+.quest-progress-dot.done {
+  background: var(--accent);
+}
+.quest-pile-bar {
+  flex-shrink: 0;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  background: var(--surface);
+  padding: 6px 0 calc(6px + env(safe-area-inset-bottom, 0px));
+  max-height: 30vh;
+  overflow-y: auto;
+}
+.quest-pile-bar .pile-stack {
+  padding: 4px 18px 8px;
+}
+.quest-pile-empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  padding: 10px 0;
+}
+
 /* ─── BOOK DETAIL ───────────────────────────────────────────────────────────── */
 .book-detail-actions {
   margin-bottom: 1rem;
