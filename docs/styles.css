@@ -3031,6 +3031,14 @@ main { min-height: 100%; }
   color: var(--text-muted);
   opacity: 0.85;
 }
+.welcome-modal-gr-help p:nth-of-type(3) {
+  margin-top: -8px;
+}
+.welcome-modal-gr-help-text:last-of-type {
+  font-style: italic;
+  color: var(--text);
+  opacity: 1;
+}
 .welcome-modal-gr-back-btn {
   width: 100%;
   background: transparent;
