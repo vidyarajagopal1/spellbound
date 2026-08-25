@@ -3006,28 +3006,33 @@ main { min-height: 100%; }
 .welcome-modal-gr-help {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
   width: 100%;
+  align-self: stretch;
   text-align: left;
 }
 .welcome-modal-gr-help-heading {
-  font-size: 0.85rem;
-  font-weight: 400;
-  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--accent2);
 }
 .welcome-modal-gr-help-text {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   line-height: 1.55;
   color: var(--text-muted);
+  opacity: 0.85;
 }
 .welcome-modal-gr-back-btn {
-  background: none;
-  border: none;
+  width: 100%;
+  background: transparent;
   color: var(--accent2);
+  border: 1.5px solid var(--accent2);
+  border-radius: var(--radius);
+  padding: 0.6rem 1.1rem;
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
-  padding: 0;
+  text-decoration: none;
 }
 .welcome-modal-gr-back-btn:active { opacity: 0.7; }
   color: var(--accent2);
