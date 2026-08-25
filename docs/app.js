@@ -673,7 +673,14 @@ async function confirmGoodreadsImport() {
 
   const added   = toBooks.length + toWishlist.length;
   const skipped = pending.skipped.length;
-  alert(`Import complete — ${added} book${added !== 1 ? 's' : ''} added${skipped ? `, ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped` : ''}.`);
+
+  if (_welcomeGrFlowActive) {
+    _welcomeGrFlowActive = false;
+    document.getElementById('welcome-modal').classList.add('hidden');
+    showView('home');
+  } else {
+    alert(`Import complete — ${added} book${added !== 1 ? 's' : ''} added${skipped ? `, ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped` : ''}.`);
+  }
 }
 
 // One-off cleanup for the batch of books imported from Goodreads before AI
@@ -4737,6 +4744,8 @@ function toggleGbApiKeyVisibility() {
 }
 
 // ─── WELCOME MODAL ────────────────────────────────────────────────────────────
+let _welcomeGrFlowActive = false;
+
 function showWelcomeModal() {
   document.getElementById('welcome-modal').classList.remove('hidden');
 }
@@ -4744,7 +4753,18 @@ function closeWelcomeModal() {
   document.getElementById('welcome-modal').classList.add('hidden');
 }
 function welcomeImportFromGoodreads() {
-  // TODO: wire up Goodreads import from the welcome screen.
+  document.getElementById('welcome-screen-main').classList.add('hidden');
+  document.getElementById('welcome-screen-goodreads').classList.remove('hidden');
+}
+function welcomeGoodreadsBack() {
+  _welcomeGrFlowActive = false;
+  document.getElementById('welcome-modal').classList.add('hidden');
+  document.getElementById('welcome-screen-goodreads').classList.add('hidden');
+  document.getElementById('welcome-screen-main').classList.remove('hidden');
+}
+function welcomeUploadGoodreadsFile() {
+  _welcomeGrFlowActive = true;
+  importGoodreads();
 }
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
