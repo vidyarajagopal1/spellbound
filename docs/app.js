@@ -4854,7 +4854,6 @@ function renderQuestStage() {
         ${stage > 0 ? `<button class="build-next-btn" onclick="questGoToStage(${stage - 1})">&larr; Back</button>` : ''}
         ${stage < QUEST_STAGE_COUNT + 1 ? `<button class="build-next-btn" onclick="questGoToStage(${stage + 1})">Next &rarr;</button>` : ''}
       </div>
-      <div class="quest-pile-shelf" id="quest-pile-bar"></div>
     </div>`;
 
   renderQuestPile();
@@ -4948,7 +4947,6 @@ function _renderQuestStage1(body) {
       <div class="build-nav">
         <button class="build-next-btn" id="quest-stage1-continue" ${chosen ? '' : 'disabled'} onclick="questGoToStage(2)">Continue</button>
       </div>
-      <div class="quest-pile-shelf" id="quest-pile-bar"></div>
     </div>`;
 }
 
@@ -5053,7 +5051,6 @@ function _renderQuestStage2(body) {
         </div>
         <p class="quest-note-sub quest-rating-note">We don't do stars, because a book can be five stars and still leave you cold.</p>
       </div>
-      <div class="quest-pile-shelf" id="quest-pile-bar"></div>
     </div>`;
 }
 
@@ -5076,8 +5073,7 @@ function renderQuestPile() {
   const pileBooks = _questState.pileIds.map(id => books.find(b => b.id === id)).filter(Boolean);
 
   if (pileBooks.length === 0) {
-    const emptyMsg = _questState.stage === 1 ? 'Your pile starts here' : 'Your pile is empty.';
-    bar.innerHTML = `<p class="quest-pile-empty">${emptyMsg}</p>`;
+    bar.innerHTML = '<p class="quest-pile-empty">Your pile starts here</p>';
     return;
   }
 
