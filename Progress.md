@@ -710,3 +710,67 @@ Diagnosed and fixed a set of bugs behind repetitive, off-genre, and non-excludab
 - Added a recency instruction, scoped to what's actually achievable: the AI proxy calls `gpt-4o`, whose knowledge cutoff is ~late 2023, so prompt-level recency weighting can realistically shift results from decades-old classics toward roughly the last several years — it cannot surface genuine 2025/2026 releases, and asking harder for "new" risks the model inventing titles that don't exist. The instruction backs off entirely when the request signals a classic/vintage preference (e.g. historical fiction, or "classic" in free text). Actual current-release support would require either a different model behind the proxy or a real candidate pool sourced from the Google Books API — not attempted here
 - Added a per-call variety token appended to the user message (instructed to be used only to vary which valid candidates surface, never mentioned in output) to stop the same input from converging on the same five books every time
 
+---
+
+| Version | Changes |
+|---|---|
+| v116 | Removed the stale reading nudge feature entirely (banner, staleness check, dismiss logic) |
+| v117 | Removed hero mood message and the empty-highlights guilt nudge from Home |
+| v118 | Updated Home page empty-state messages |
+| v119 | Dog-eared section shows any saved highlight regardless of age (previously required activity in the last 7 days) |
+| v120 | Updated Currently Reading empty-state message |
+| v121 | Added "Add New Book" button under the Home greeting; moved "Add Highlight" button into the Currently Reading section |
+| v122 | Restyled Home page buttons: quiet solid "Add New Book", outlined "Add Highlight" |
+| v123 | Fixed `sw.js` to serve the HTML shell network-first, so version bumps always take effect for returning users |
+| v124 | Stripped card treatment from home-hero; aligned "Add New Book" button to the page left margin; made Home buttons compact and consistently sized |
+| v125 | Restyled greeting as a serif opening line; matched "Add New Book" to the outlined "Add Highlight" style; added spacing above "Add Highlight" |
+| v126 | Filled "Add New Book" button with a muted solid color |
+| v127 | Grouped Reading books under a heading at the top of the Add Highlight book dropdown when unfiltered |
+| v128 | Added a welcome pop-up shown on first launch when no books exist |
+| v129 | Restyled welcome pop-up: header logo mark, prominent serif tagline, matching option buttons, wider layout with grouped spacing |
+| v130 | Styled welcome modal tagline in italic gold; added a decorative divider before the option pairs |
+| v131 | Brightened welcome modal question text for more prominence without bolding |
+| v132 | Wired up "Import from Goodreads" in the welcome pop-up: second screen with upload/instructions/back, reusing the existing import flow and confirmation modal unchanged |
+| v133 | Styled welcome pop-up Goodreads screen: left-aligned instructions, brighter heading, quieter smaller body text, Back as an outline button, spacing between steps |
+| v134 | Fixed broken CSS: `.welcome-modal-option-btn` rule had been split apart by an earlier edit (v132/v133), leaving invalid orphaned declarations that silently prevented the Goodreads screen styling from applying |
+| v135 | Reduced spacing between the first two Goodreads help lines; made the reassurance line ("Don't worry…") italic and brighter |
+| v136 | Goodreads screen: made Back a quiet inline link instead of a bordered button, brightened instruction text, added spacing between the title and the "Upload my file" button |
+
+---
+
+## Home Page Cleanup (v116–v127)
+
+A round of simplification and restyling on the Home tab, removing nudge-style features that had accumulated and hadn't proven useful, followed by button/layout polish.
+
+- **Stale reading nudge removed (v116)** — the whole "you'd owe a fine by now" banner feature (from SW v20) was removed: the staleness check, the banner markup, and the dismiss-in-memory logic
+- **Guilt-trip messaging removed (v117)** — the hero's mood-based message (*"Books don't read themselves. Allegedly."* etc.) and the empty-highlights guilt nudge (*"There is no friend as loyal as a book…"*) were both removed
+- **Empty-state copy updated (v118, v120)** — Home page empty states (Currently Reading, general) rewritten
+- **Dog-eared age restriction removed (v119)** — previously only showed a highlight if one had been saved in the last 7 days; now shows any saved highlight regardless of when it was added, so the section isn't empty just because it's been a while
+- **Add New Book + Add Highlight buttons (v121–v122, v124–v126)** — a new "Add New Book" button was added under the greeting, and "Add Highlight" was moved into the Currently Reading section; both went through several passes of restyling (outlined vs. solid, size/alignment, left-margin alignment, muted fill color) to land on: quiet solid "Add New Book" + outlined "Add Highlight", compact and consistently sized, aligned to the page's left margin
+- **Greeting restyled (v125)** — changed to a serif opening line to match the app's Playfair Display accents elsewhere
+- **Home hero card treatment removed (v124)** — the bordered card wrapper around the hero strip was stripped for a flatter look
+- **Service worker network-first fix (v123)** — `sw.js` was updated to serve the HTML shell (`/` and `/index.html`) network-first instead of cache-first, fixing a bug where version bumps could silently fail to reach returning users because the cached `index.html` (referencing `?v=N` asset URLs) could get stuck stale
+- **Add Highlight book dropdown grouping (v127)** — when the dropdown isn't filtered by search, Reading books are grouped under a heading at the top so the most relevant books surface first
+
+## Welcome Pop-up (v128–v136)
+
+A first-launch modal shown when a user has no books yet, offering either a fresh start or an import from an existing Goodreads library.
+
+### First Version + Restyle (v128–v131)
+- **v128**: Added the welcome pop-up itself — shown on first launch when the books store is empty, with two options ("Import from Goodreads" / "Continue" to start fresh)
+- **v129**: Restyled with a header logo mark, a more prominent serif tagline, matching option buttons, and a wider layout with grouped spacing
+- **v130**: Tagline styled in italic gold (Playfair Display); added a decorative divider (`✦` flanked by thin rules) before the option pairs
+- **v131**: Brightened the question text above each option button for more prominence, without making it bold
+
+### Goodreads Import Wiring + Styling (v132–v133)
+- **v132**: Wired up "Import from Goodreads" as a second screen inside the same modal (`#welcome-screen-goodreads`) — "Upload my file" button, step-by-step instructions for exporting from Goodreads, and a Back button. Reuses the existing Goodreads CSV import flow and confirmation modal unchanged; a `_welcomeGrFlowActive` flag lets `confirmGoodreadsImport()` close the whole welcome modal (instead of just the confirm modal) once the import completes from this entry point
+- **v133**: Styled the second screen — left-aligned instructions, brighter/larger heading, quieter and smaller body text for the help steps, Back rendered as an outline button, and spacing added between each instructional step
+
+### CSS Corruption Bug Fix (v134)
+- The Goodreads screen styling from v133 silently failed to render for some time after shipping. Root cause turned out not to be caching but a genuine CSS syntax bug: an earlier edit (during v132/v133) had spliced new rules into the middle of the still-open `.welcome-modal-option-btn` rule, leaving that rule's later declarations and closing brace orphaned as invalid CSS further down the file — browsers silently drop/misparse malformed CSS like this with no console error, so it looked exactly like a stale-cache issue but wasn't
+- Fixed by reconstructing `.welcome-modal-option-btn` and all five `.welcome-modal-gr-*` rules as clean, correctly-closed, separate rules
+
+### Fine-Tuning Pass (v135–v136)
+- **v135**: Reduced the gap between the first two Goodreads help lines; made the closing reassurance line ("Don't worry, you won't lose anything…") italic and brighter than the two lines above it, while keeping the same font size
+- **v136**: Three further fixes so "Upload my file" reads clearly as the primary action — Back changed from a full-width bordered button to a small, quiet inline link (no border, muted color, auto width); instruction text color brightened for readability against the dark background while keeping it smaller than the title; added margin below the title so "Upload my file" isn't pressed up against the heading
+
