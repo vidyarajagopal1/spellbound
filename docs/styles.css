@@ -2945,8 +2945,26 @@ main { min-height: 100%; }
   font-family: 'Playfair Display', serif;
   font-size: 1.2rem;
   font-weight: 400;
+  font-style: italic;
   line-height: 1.65;
-  color: var(--text);
+  color: #e8c97e;
+}
+.welcome-modal-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.welcome-modal-divider span {
+  flex: 1;
+  height: 1px;
+  background: rgba(255,255,255,0.12);
+}
+.welcome-modal-divider-mark {
+  font-style: normal;
+  font-size: 0.7rem;
+  color: #e8c97e;
+  opacity: 0.7;
 }
 .welcome-modal-options {
   display: flex;
