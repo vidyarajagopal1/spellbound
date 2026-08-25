@@ -4839,6 +4839,9 @@ function renderQuestStage() {
         }).join('');
   }
 
+  if (stage === 1) { _renderQuestStage1(body); renderQuestPile(); return; }
+  if (stage === 2) { _renderQuestStage2(body); renderQuestPile(); return; }
+
   // Placeholder body so the shell can be exercised end to end before any
   // real stage content exists.
   body.innerHTML = `
@@ -4853,6 +4856,160 @@ function renderQuestStage() {
   renderQuestPile();
 }
 
+// ── Stage 1 — Last book ─────────────────────────────────────────────────────
+// Copy: docs/quest-copy.md "Stage 1 — Last book". Mandatory, one book only.
+// Importer variant shows a grid of the six most recently finished books from
+// the Goodreads import; both variants share the search field.
+
+let _questSearchTimer = null;
+
+function _questImporterCandidates() {
+  return books
+    .filter(b => b.source === 'goodreads' && b.status === 'Completed' && b.dateCompleted)
+    .sort((a, b) => (b.dateCompleted || '').localeCompare(a.dateCompleted || ''))
+    .slice(0, 6);
+}
+
+function _questStage1Book() {
+  const id = _questState.pileIds[0];
+  return id ? books.find(b => b.id === id) : null;
+}
+
+function _renderQuestStage1(body) {
+  const candidates = _questImporterCandidates();
+  const isImporter  = candidates.length > 0;
+  const chosen      = _questStage1Book();
+
+  const gridHtml = isImporter ? `
+      <p class="quest-note-sub">The six most recent from your import.</p>
+      <div class="quest-import-grid" id="quest-stage1-grid">
+        ${candidates.map(b => `
+          <button type="button" class="quest-grid-item ${chosen && chosen.id === b.id ? 'selected' : ''}" data-book-id="${b.id}" onclick="questStage1SelectImported(${b.id})">
+            <div class="quest-grid-cover" style="background-color:${getCoverColor(b.category)}">
+              <span class="quest-grid-cover-title">${escapeHtml(b.title)}</span>
+            </div>
+          </button>`).join('')}
+      </div>
+      <p class="quest-note-sub">Not here? Search for it.</p>` : '';
+
+  body.innerHTML = `
+    <div class="build-step quest-stage">
+      <p class="build-prompt">${isImporter ? "Which of these did you finish last?" : "What's the last book you finished?"}</p>
+      <p class="build-prompt-small">Don't worry about chronology. The last one you remember works just fine.</p>
+      ${gridHtml}
+      <div class="quest-search">
+        <input type="search" class="quest-search-input" id="quest-search-input-1" placeholder="Search for books" oninput="questStage1SearchInput(this.value)" autocomplete="off">
+        <div class="quest-search-results" id="quest-search-results-1"></div>
+      </div>
+      <div class="build-nav">
+        <button class="build-next-btn" id="quest-stage1-continue" ${chosen ? '' : 'disabled'} onclick="questGoToStage(2)">Continue</button>
+      </div>
+    </div>`;
+}
+
+function _questUpdateStage1UI() {
+  const chosen       = _questStage1Book();
+  const continueBtn  = document.getElementById('quest-stage1-continue');
+  if (continueBtn) continueBtn.disabled = !chosen;
+  const grid = document.getElementById('quest-stage1-grid');
+  if (grid) {
+    grid.querySelectorAll('.quest-grid-item').forEach(el => {
+      el.classList.toggle('selected', !!chosen && Number(el.dataset.bookId) === chosen.id);
+    });
+  }
+  renderQuestPile();
+}
+
+async function questStage1SelectImported(bookId) {
+  const chosen = _questStage1Book();
+  _questState.pileIds = (chosen && chosen.id === bookId) ? [] : [bookId];
+  await _saveQuestState();
+  _questUpdateStage1UI();
+}
+
+async function _questCreateBookFromSearchResult(item, status) {
+  const book = {
+    id:            nextId(books),
+    title:         item.title || '',
+    author:        (item.author_name || []).join(', '),
+    status:        status,
+    category:      mapCategory(item.subject),
+    medium:        '',
+    rating:        '',
+    notes:         '',
+    aftertaste:    '',
+    dateCompleted: status === 'Completed' ? new Date().toISOString().slice(0, 10) : '',
+    updatedAt:     new Date().toISOString(),
+    source:        'manual',
+  };
+  await dbPut('books', book);
+  await saveAndSync();
+  return book;
+}
+
+function questStage1SearchInput(value) {
+  clearTimeout(_questSearchTimer);
+  const resultsEl = document.getElementById('quest-search-results-1');
+  if (!resultsEl) return;
+  const q = value.trim();
+  if (q.length < 2) { resultsEl.innerHTML = ''; return; }
+  resultsEl.innerHTML = '<p class="quest-search-loading">Searching…</p>';
+  _questSearchTimer = setTimeout(async () => {
+    const items = await googleBooksSearch(q, { maxResults: 8, field: 'intitle' });
+    if (!items)          { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
+    if (items.length === 0) { resultsEl.innerHTML = '<p class="quest-search-loading">No results found.</p>'; return; }
+    resultsEl._items = items;
+    resultsEl.innerHTML = items.map((item, i) => `
+      <div class="quest-search-result" onclick="questStage1SearchSelect(${i})">
+        ${item.thumb ? `<img class="quest-search-result-thumb" src="${item.thumb}" alt="">` : '<div class="quest-search-result-thumb quest-search-result-thumb-placeholder"></div>'}
+        <div class="quest-search-result-info">
+          <div class="quest-search-result-title">${escapeHtml(item.fullTitle || item.title)}</div>
+          ${item.author_name?.length ? `<div class="quest-search-result-author">${escapeHtml(item.author_name.join(', '))}</div>` : ''}
+        </div>
+      </div>`).join('');
+  }, 350);
+}
+
+async function questStage1SearchSelect(index) {
+  const resultsEl = document.getElementById('quest-search-results-1');
+  const item = resultsEl?._items?.[index];
+  if (!item) return;
+  const book = await _questCreateBookFromSearchResult(item, 'Completed');
+  _questState.pileIds = [book.id];
+  await _saveQuestState();
+  resultsEl.innerHTML = '';
+  const input = document.getElementById('quest-search-input-1');
+  if (input) { input.value = ''; input.focus(); }
+  _questUpdateStage1UI();
+}
+
+// ── Stage 2 — Rating ────────────────────────────────────────────────────────
+// Copy: docs/quest-copy.md "Stage 2 — Rating". Rates the book from Stage 1.
+// No advance button in the spec — selecting a rating advances immediately.
+
+const QUEST_RATING_ORDER = ['forgot', 'goodwhile', 'rentfree', 'wrecked'];
+
+function _renderQuestStage2(body) {
+  body.innerHTML = `
+    <div class="build-step quest-stage">
+      <p class="build-prompt">How did it leave you feeling?</p>
+      <div class="quest-rating-options">
+        ${QUEST_RATING_ORDER.map(key => `<button type="button" class="quest-rating-btn" onclick="questStage2SelectRating('${key}')">${RATING_LABELS[key].label}</button>`).join('')}
+      </div>
+      <p class="quest-note-sub quest-rating-note">We don't do stars, because a book can be five stars and still leave you cold.</p>
+    </div>`;
+}
+
+async function questStage2SelectRating(ratingKey) {
+  const book = _questStage1Book();
+  if (book) {
+    book.rating    = ratingKey;
+    book.updatedAt = new Date().toISOString();
+    await dbPut('books', book);
+  }
+  questGoToStage(3);
+}
+
 // Shared pile component — a filtered view of the library showing only books
 // added to the pile during this quest session. Reuses the same spine markup
 // as the Books view. Tapping a spine removes it from the pile.
@@ -4862,7 +5019,8 @@ function renderQuestPile() {
   const pileBooks = _questState.pileIds.map(id => books.find(b => b.id === id)).filter(Boolean);
 
   if (pileBooks.length === 0) {
-    bar.innerHTML = '<p class="quest-pile-empty">Your pile is empty.</p>';
+    const emptyMsg = _questState.stage === 1 ? 'Your pile starts here' : 'Your pile is empty.';
+    bar.innerHTML = `<p class="quest-pile-empty">${emptyMsg}</p>`;
     return;
   }
 

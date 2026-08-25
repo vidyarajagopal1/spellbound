@@ -866,6 +866,128 @@ main { min-height: 100%; }
   padding: 10px 0;
 }
 
+.quest-note-sub {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: -0.4rem 0 0;
+}
+.quest-import-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.quest-grid-item {
+  background: none;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.quest-grid-item.selected {
+  border-color: var(--accent2);
+}
+.quest-grid-cover {
+  height: 90px;
+  border-radius: 8px;
+  display: flex;
+  align-items: flex-end;
+  padding: 8px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+}
+.quest-grid-cover-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.95);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  line-height: 1.25;
+}
+.quest-search {
+  position: relative;
+}
+.quest-search-input {
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+.quest-search-input:focus { outline: none; border-color: var(--accent2); }
+.quest-search-results {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.quest-search-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.quest-search-result:hover { background: rgba(255,255,255,0.06); }
+.quest-search-result-thumb {
+  width: 32px;
+  height: 46px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.quest-search-result-thumb-placeholder {
+  background: rgba(255,255,255,0.08);
+}
+.quest-search-result-info {
+  min-width: 0;
+}
+.quest-search-result-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.quest-search-result-author {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.quest-search-loading {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 6px 0;
+}
+.quest-rating-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.quest-rating-btn {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.quest-rating-btn:active { background: rgba(255,255,255,0.08); }
+.quest-rating-note {
+  margin-top: 0.4rem;
+}
+
 /* ─── BOOK DETAIL ───────────────────────────────────────────────────────────── */
 .book-detail-actions {
   margin-bottom: 1rem;
