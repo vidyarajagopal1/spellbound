@@ -4824,9 +4824,12 @@ function renderQuestStage() {
 
   const { stage } = _questState;
   if (indicator) {
+    // The progress dots already communicate "stage N of 6", so the numbered
+    // stages get no header label. Only the intro and the closing handoff
+    // (which the dots don't cover) get a label.
     indicator.textContent = stage === 0 ? 'Quest'
       : stage > QUEST_STAGE_COUNT ? 'Find Your Next Read'
-      : `Stage ${stage} of ${QUEST_STAGE_COUNT}`;
+      : '';
   }
 
   if (progress) {
@@ -4851,6 +4854,7 @@ function renderQuestStage() {
         ${stage > 0 ? `<button class="build-next-btn" onclick="questGoToStage(${stage - 1})">&larr; Back</button>` : ''}
         ${stage < QUEST_STAGE_COUNT + 1 ? `<button class="build-next-btn" onclick="questGoToStage(${stage + 1})">Next &rarr;</button>` : ''}
       </div>
+      <div class="quest-pile-shelf" id="quest-pile-bar"></div>
     </div>`;
 
   renderQuestPile();
@@ -4875,48 +4879,91 @@ function _questStage1Book() {
   return id ? books.find(b => b.id === id) : null;
 }
 
-function _renderQuestStage1(body) {
+// Books shown in the importer grid: the up-to-six most recent candidates,
+// plus the currently chosen book if it isn't already among them (e.g. it was
+// picked via search) — so the grid always reflects the current pick.
+function _questStage1GridBooks() {
   const candidates = _questImporterCandidates();
-  const isImporter  = candidates.length > 0;
-  const chosen      = _questStage1Book();
+  const chosen     = _questStage1Book();
+  const gridBooks  = candidates.slice();
+  if (chosen && !gridBooks.some(b => b.id === chosen.id)) gridBooks.unshift(chosen);
+  return { candidates, gridBooks, chosen };
+}
 
-  const gridHtml = isImporter ? `
-      <p class="quest-note-sub">The six most recent from your import.</p>
-      <div class="quest-import-grid" id="quest-stage1-grid">
-        ${candidates.map(b => `
-          <button type="button" class="quest-grid-item ${chosen && chosen.id === b.id ? 'selected' : ''}" data-book-id="${b.id}" onclick="questStage1SelectImported(${b.id})">
-            <div class="quest-grid-cover" style="background-color:${getCoverColor(b.category)}">
-              <span class="quest-grid-cover-title">${escapeHtml(b.title)}</span>
-            </div>
-          </button>`).join('')}
+// A single selectable tile — reuses the exact spine markup/classes from the
+// Books tab pile (same shape, gold border treatment, title/author layout)
+// so the grid reads as books on a shelf rather than as generic buttons.
+function _questSpineOptionHtml(b, i, total, isSelected) {
+  const color  = getCoverColor(b.category);
+  const zIdx   = total - i;
+  const authorHtml = b.author
+    ? `<span class="spine-sep">·</span><span class="spine-author">${escapeHtml(b.author)}</span>`
+    : '';
+  const checkHtml = isSelected ? '<i class="ph-bold ph-check-circle quest-spine-check"></i>' : '';
+  return `
+    <div class="book-spine quest-spine-option ${isSelected ? 'selected' : ''}" data-book-id="${b.id}"
+         style="--spine-bg:${color};z-index:${zIdx}" onclick="questStage1SelectImported(${b.id})">
+      <div class="spine-body">
+        <span class="spine-title">${escapeHtml(b.title)}</span>
+        ${authorHtml}
+        ${checkHtml}
       </div>
-      <p class="quest-note-sub">Not here? Search for it.</p>` : '';
+    </div>`;
+}
+
+function _questSearchBlockHtml() {
+  return `
+    <div class="quest-search">
+      <input type="search" class="quest-search-input" id="quest-search-input-1" placeholder="Search for books" oninput="questStage1SearchInput(this.value)" autocomplete="off">
+      <div class="quest-search-results" id="quest-search-results-1"></div>
+    </div>`;
+}
+
+function _renderQuestStage1(body) {
+  const isImporter = _questImporterCandidates().length > 0;
+  const { gridBooks, chosen } = _questStage1GridBooks();
+
+  const gridSectionHtml = isImporter ? `
+      <div class="quest-group">
+        <p class="quest-note-sub">The most recent from your import.</p>
+        <div class="quest-spine-list" id="quest-stage1-grid">
+          ${gridBooks.map((b, i) => _questSpineOptionHtml(b, i, gridBooks.length, chosen && chosen.id === b.id)).join('')}
+        </div>
+      </div>
+      <div class="quest-group">
+        <p class="quest-note-sub">Not here? Search for it.</p>
+        ${_questSearchBlockHtml()}
+      </div>` : `
+      <div class="quest-group">
+        ${_questSearchBlockHtml()}
+      </div>`;
 
   body.innerHTML = `
     <div class="build-step quest-stage">
-      <p class="build-prompt">${isImporter ? "Which of these did you finish last?" : "What's the last book you finished?"}</p>
-      <p class="build-prompt-small">Don't worry about chronology. The last one you remember works just fine.</p>
-      ${gridHtml}
-      <div class="quest-search">
-        <input type="search" class="quest-search-input" id="quest-search-input-1" placeholder="Search for books" oninput="questStage1SearchInput(this.value)" autocomplete="off">
-        <div class="quest-search-results" id="quest-search-results-1"></div>
+      <div class="quest-group">
+        <p class="build-prompt">${isImporter ? "Which of these did you finish last?" : "What's the last book you finished?"}</p>
+        <p class="build-prompt-small">Don't worry about chronology. The last one you remember works just fine.</p>
       </div>
+      ${gridSectionHtml}
       <div class="build-nav">
         <button class="build-next-btn" id="quest-stage1-continue" ${chosen ? '' : 'disabled'} onclick="questGoToStage(2)">Continue</button>
       </div>
+      <div class="quest-pile-shelf" id="quest-pile-bar"></div>
     </div>`;
+}
+
+function _questRenderStage1Grid() {
+  const grid = document.getElementById('quest-stage1-grid');
+  if (!grid) return; // non-importer path has no grid to update
+  const { gridBooks, chosen } = _questStage1GridBooks();
+  grid.innerHTML = gridBooks.map((b, i) => _questSpineOptionHtml(b, i, gridBooks.length, chosen && chosen.id === b.id)).join('');
 }
 
 function _questUpdateStage1UI() {
   const chosen       = _questStage1Book();
   const continueBtn  = document.getElementById('quest-stage1-continue');
   if (continueBtn) continueBtn.disabled = !chosen;
-  const grid = document.getElementById('quest-stage1-grid');
-  if (grid) {
-    grid.querySelectorAll('.quest-grid-item').forEach(el => {
-      el.classList.toggle('selected', !!chosen && Number(el.dataset.bookId) === chosen.id);
-    });
-  }
+  _questRenderStage1Grid();
   renderQuestPile();
 }
 
@@ -4974,13 +5021,18 @@ async function questStage1SearchSelect(index) {
   const resultsEl = document.getElementById('quest-search-results-1');
   const item = resultsEl?._items?.[index];
   if (!item) return;
-  const book = await _questCreateBookFromSearchResult(item, 'Completed');
-  _questState.pileIds = [book.id];
-  await _saveQuestState();
-  resultsEl.innerHTML = '';
-  const input = document.getElementById('quest-search-input-1');
-  if (input) { input.value = ''; input.focus(); }
-  _questUpdateStage1UI();
+  try {
+    const book = await _questCreateBookFromSearchResult(item, 'Completed');
+    _questState.pileIds = [book.id];
+    await _saveQuestState();
+    resultsEl.innerHTML = '';
+    const input = document.getElementById('quest-search-input-1');
+    if (input) { input.value = ''; input.focus(); }
+    _questUpdateStage1UI();
+  } catch (err) {
+    console.error('questStage1SearchSelect failed', err);
+    resultsEl.innerHTML = '<p class="quest-search-loading">Something went wrong adding that book. Check the console for details.</p>';
+  }
 }
 
 // ── Stage 2 — Rating ────────────────────────────────────────────────────────
@@ -4992,11 +5044,16 @@ const QUEST_RATING_ORDER = ['forgot', 'goodwhile', 'rentfree', 'wrecked'];
 function _renderQuestStage2(body) {
   body.innerHTML = `
     <div class="build-step quest-stage">
-      <p class="build-prompt">How did it leave you feeling?</p>
-      <div class="quest-rating-options">
-        ${QUEST_RATING_ORDER.map(key => `<button type="button" class="quest-rating-btn" onclick="questStage2SelectRating('${key}')">${RATING_LABELS[key].label}</button>`).join('')}
+      <div class="quest-group">
+        <p class="build-prompt">How did it leave you feeling?</p>
       </div>
-      <p class="quest-note-sub quest-rating-note">We don't do stars, because a book can be five stars and still leave you cold.</p>
+      <div class="quest-group">
+        <div class="quest-rating-options">
+          ${QUEST_RATING_ORDER.map(key => `<button type="button" class="quest-rating-btn" onclick="questStage2SelectRating('${key}')">${RATING_LABELS[key].label}</button>`).join('')}
+        </div>
+        <p class="quest-note-sub quest-rating-note">We don't do stars, because a book can be five stars and still leave you cold.</p>
+      </div>
+      <div class="quest-pile-shelf" id="quest-pile-bar"></div>
     </div>`;
 }
 
