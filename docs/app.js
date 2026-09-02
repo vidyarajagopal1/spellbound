@@ -1230,7 +1230,7 @@ async function fetchBookSuggestions(title, form) {
   if (!sugEl) return;
   const authorEl = document.getElementById(_authorElId(form));
   const author = authorEl ? authorEl.value.trim() : '';
-  const items = await googleBooksSearch(title, { maxResults: 10, field: 'intitle', author: author || null });
+  const items = await googleBooksIncrementalSearch(title, { maxResults: 10, author: author || null });
   if (items === null) {
     sugEl.innerHTML = '<p class="book-lookup-loading">Lookup failed.</p>';
     return;
@@ -2058,19 +2058,29 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, author =
 // Two perf optimizations on top of that, since this fires far more often
 // than any other search in the app:
 // - `fields=` restricts the response to only what these results render
-//   (title/subtitle/authors/thumb) — cuts payload size substantially, since
-//   the fields it drops (description in particular) can be large and are
-//   never shown here (unlike googleBooksSearch, which fetchWishlistDescription
-//   relies on for `description` — left untouched).
+//   (title/subtitle/authors/categories/thumb) — cuts payload size
+//   substantially, since the fields it drops (description in particular)
+//   can be large and are never shown here (unlike googleBooksSearch, which
+//   fetchWishlistDescription relies on for `description` — left untouched).
 // - A tiny one-entry cache keyed by the exact string sent to the API
 //   (`sendWords`). Once you're past the first couple of words, sendWords
 //   often stops changing for several keystrokes in a row (only the final,
 //   still-typing word grows, and that part is always filtered locally) —
 //   so those keystrokes can reuse the last response instead of re-hitting
 //   the network.
+//
+// The words sent are wrapped in quotes (`intitle:"..."`) — confirmed against
+// live results that an unquoted multi-word value after a field operator only
+// binds the operator to the first word, letting the rest match any field
+// (including author). Quoting is safe here specifically because the word
+// still being typed is always dropped first, so every word actually sent is
+// complete — the earlier unquoted form existed only to allow partial words,
+// which no longer applies.
+const GB_STOPWORDS = new Set(['the','a','an','of','and','or','in','on','to','for','at','by','is','it']);
+
 let _gbIncrementalCache = { key: null, items: null };
 
-async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4000 } = {}) {
+async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4000, author = null } = {}) {
   if (!navigator.onLine) return null;
   const cleaned = normalizeBookQuery(query);
   if (!cleaned) return [];
@@ -2081,12 +2091,16 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
     const leading = words.slice(0, -1).join(' ');
     if (leading.length >= 3) sendWords = leading;
   }
+  // If every word we'd send is a common stopword, the API would just return
+  // thirty arbitrary books that the local filter discards anyway — skip the
+  // round trip entirely.
+  if (sendWords.split(' ').every(w => GB_STOPWORDS.has(w.toLowerCase()))) return [];
   let items;
   if (_gbIncrementalCache.key === sendWords) {
     items = _gbIncrementalCache.items;
   } else {
-    const fields = encodeURIComponent('items(volumeInfo(title,subtitle,authors,imageLinks))');
-    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(`intitle:${sendWords}`)}&printType=books&maxResults=30&fields=${fields}${await gbApiKeyParam()}`;
+    const fields = encodeURIComponent('items(volumeInfo(title,subtitle,authors,categories,imageLinks))');
+    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(`intitle:"${sendWords}"`)}&printType=books&maxResults=30&fields=${fields}${await gbApiKeyParam()}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
@@ -2102,6 +2116,11 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
     _gbIncrementalCache = { key: sendWords, items };
   }
   let results = items.filter(r => normalizeBookQuery(r.fullTitle).toLowerCase().includes(q));
+  if (author) {
+    const na = normalizeBookQuery(author).toLowerCase();
+    const filtered = results.filter(r => (r.author_name || []).some(a => normalizeBookQuery(a).toLowerCase().includes(na)));
+    if (filtered.length > 0) results = filtered;
+  }
   results = _dedupeBookResults(results);
   const tier = r => {
     const t  = normalizeBookQuery(r.title).toLowerCase();
