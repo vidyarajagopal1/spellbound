@@ -913,14 +913,17 @@ main { min-height: 100%; }
   color: var(--text-muted);
   font-size: 0.82rem;
 }
-/* "N added" counter beside the pile shelf — only populated on Stages 3–5. */
+/* "N added" counter beside the pile shelf — only populated on Stages 3–5.
+   Handwritten treatment: it's a live, useful running tally, not decoration. */
 .quest-added-count {
   width: calc(100% - 2rem);
   max-width: 600px;
   margin: 0.4rem auto 0;
   text-align: right;
-  font-size: 0.78rem;
-  color: var(--text-muted);
+  font-family: 'Caveat', cursive;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--accent2);
   min-height: 1em;
 }
 /* Vertically centers stage content so it fills the available screen instead
@@ -936,11 +939,44 @@ main { min-height: 100%; }
 /* Groups within a quest stage: tight spacing inside a group, more room
    between groups (question+helper / grid / search each read as one block
    rather than a single uniform form). */
-.quest-stage { gap: 1.9rem; }
+.quest-stage {
+  gap: 1.9rem;
+  /* Advancing feels like turning a page rather than a hard content swap.
+     Runs automatically on insertion (innerHTML replacement), no JS needed. */
+  animation: quest-stage-in 0.22s ease both;
+}
+@keyframes quest-stage-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 .quest-group {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+/* Question-stage heading typography — a step up from the plain Build Essay
+   .build-prompt/.build-prompt-small it's based on, scoped to #quest-overlay
+   only so Build Essay is unaffected. */
+#quest-overlay .build-prompt {
+  font-size: 1.32rem;
+  line-height: 1.35;
+}
+#quest-overlay .build-prompt-small {
+  font-size: 0.87rem;
+}
+
+/* "Step N of 6" wayfinding label — useful position info the progress dots
+   don't spell out in words, so a handwritten treatment earns its place
+   (unlike a purely decorative flourish). Only applied to numbered stages;
+   the intro/handoff bookend labels keep the standard uppercase treatment. */
+#quest-step-indicator.quest-step-label {
+  font-family: 'Caveat', cursive;
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--accent2);
 }
 
 .quest-note-sub {
@@ -954,10 +990,10 @@ main { min-height: 100%; }
    the copy (not a question to answer) is the whole point of the screen. */
 .quest-intro-heading {
   font-family: 'Playfair Display', serif;
-  font-size: 1.65rem;
+  font-size: 1.85rem;
   font-weight: 700;
   color: var(--accent2);
-  line-height: 1.35;
+  line-height: 1.3;
 }
 .quest-intro-sub {
   font-size: 0.95rem;
@@ -965,6 +1001,51 @@ main { min-height: 100%; }
   opacity: 0.85;
   line-height: 1.6;
   margin-top: 0.4rem;
+}
+
+/* Paper-note treatment for the two "bookend" screens (intro + Find Your Next
+   Read handoff) — reuses the exact folded-corner/cream-card motif from the
+   Home tab's highlight quote cards (.home-quote-card) so the quest quotes
+   the app's own reading-journal aesthetic rather than inventing a new one.
+   Not used on the numbered question stages, which is the point: it visually
+   marks these two screens as a different kind of moment (a message, not a
+   question to answer). No tilt-on-hover (these cards aren't clickable) and
+   no rotation beyond the same static -0.3deg the Home cards use at rest. */
+.quest-note-card {
+  position: relative;
+  background: #f5f0e4;
+  border-radius: var(--radius);
+  border-top-right-radius: 0;
+  padding: 1.05rem 44px 1.15rem 1.15rem;
+  border-top: 4px solid var(--accent2);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.45);
+  transform: rotate(-0.3deg);
+}
+.quest-note-card::before {
+  content: '';
+  position: absolute;
+  top: -4px; right: 0;
+  width: 34px; height: 34px;
+  background: linear-gradient(225deg, var(--bg) 50%, transparent 50%);
+  z-index: 1;
+}
+.quest-note-card::after {
+  content: '';
+  position: absolute;
+  top: -4px; right: 0;
+  width: 34px; height: 34px;
+  background: linear-gradient(45deg, #c8bc98 50%, transparent 50%);
+  box-shadow: -2px 2px 4px rgba(0,0,0,0.25);
+  z-index: 2;
+}
+.quest-note-card .quest-intro-heading,
+.quest-note-card .build-prompt {
+  color: #241c12;
+}
+.quest-note-card .quest-intro-sub,
+.quest-note-card .build-prompt-small {
+  color: #5a4c3a;
+  opacity: 1;
 }
 
 /* Intro pseudo shelf — illustrative only, never the real session pile.

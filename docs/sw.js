@@ -1,9 +1,9 @@
-const CACHE_NAME = 'spellbound-v151';
+const CACHE_NAME = 'spellbound-v152';
 const ASSETS = [
   '/',
   '/index.html',
-  '/app.js?v=151',
-  '/styles.css?v=151',
+  '/app.js?v=152',
+  '/styles.css?v=152',
   '/logo-header.png',
   '/manifest.json',
   '/purify.min.js',

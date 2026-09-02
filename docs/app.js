@@ -4856,12 +4856,15 @@ function renderQuestStage() {
 
   const { stage } = _questState;
   if (indicator) {
-    // The progress dots already communicate "stage N of 6", so the numbered
-    // stages get no header label. Only the intro and the closing handoff
-    // (which the dots don't cover) get a label.
+    // The progress dots show position visually; this label adds a plain-
+    // language "Step N of 6" for the numbered stages (handwritten treatment
+    // via .quest-step-label — useful wayfinding text, not decoration) and
+    // keeps the existing bookend labels for the intro/handoff.
+    const isNumbered = stage > 0 && stage <= QUEST_STAGE_COUNT;
     indicator.textContent = stage === 0 ? 'Quest'
       : stage > QUEST_STAGE_COUNT ? 'Find Your Next Read'
-      : '';
+      : `Step ${stage} of ${QUEST_STAGE_COUNT}`;
+    indicator.classList.toggle('quest-step-label', isNumbered);
   }
 
   if (progress) {
@@ -4948,8 +4951,10 @@ function _renderQuestStage0(body) {
   body.innerHTML = `
     <div class="build-step quest-stage">
       <div class="quest-group">
-        <p class="quest-intro-heading">A shelf of your own, waiting to be filled.</p>
-        <p class="quest-intro-sub">Come on a quest. We'll start with a few books you know, and find your next great read along the way.</p>
+        <div class="quest-note-card">
+          <p class="quest-intro-heading">A shelf of your own, waiting to be filled.</p>
+          <p class="quest-intro-sub">Come on a quest. We'll start with a few books you know, and find your next great read along the way.</p>
+        </div>
       </div>
       <div class="quest-group">
         <div class="quest-intro-shelf">
@@ -5638,10 +5643,12 @@ function _renderQuestStage7(body) {
   body.innerHTML = `
     <div class="build-step quest-stage">
       <div class="quest-group">
-        <p class="build-prompt">That's your shelf, and it'll keep growing.</p>
-        <p class="build-prompt-small" id="quest-fnr-subcopy">${fiveOrMore
-          ? "Now for the part we promised. Let's find you something worth reading next."
-          : `Find Your Next Read works best with five to eight books in your pile. You've got ${count}.`}</p>
+        <div class="quest-note-card">
+          <p class="build-prompt">That's your shelf, and it'll keep growing.</p>
+          <p class="build-prompt-small" id="quest-fnr-subcopy">${fiveOrMore
+            ? "Now for the part we promised. Let's find you something worth reading next."
+            : `Find Your Next Read works best with five to eight books in your pile. You've got ${count}.`}</p>
+        </div>
       </div>
       <div class="quest-group" id="quest-fnr-add-more" style="display:none">
         ${_questFNRSearchBlockHtml()}
