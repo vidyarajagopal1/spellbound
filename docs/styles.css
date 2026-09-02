@@ -827,33 +827,56 @@ main { min-height: 100%; }
 }
 
 /* ─── QUEST OVERLAY (first-run quest shell) ────────────────────────────────── */
-/* Distinct identity from the plain Build Essay overlay it shares base
-   classes with (.build-overlay/.build-header/.build-body/.build-next-btn):
-   a warm gold glow and accent-led chrome so the quest reads as a special,
-   occasion-led experience rather than another form to fill in. Scoped by
-   #quest-overlay id throughout so Build Essay is completely unaffected. */
+/* Light/cream theme — distinct from every dark surface elsewhere in the app
+   (including the plain Build Essay overlay it shares base classes with:
+   .build-overlay/.build-header/.build-body/.build-next-btn), so the quest
+   reads as a special, occasion-led experience rather than another dark form
+   to fill in. Scoped by #quest-overlay id throughout so Build Essay is
+   completely unaffected. Ink/brown text tones below (#241c12, #5a4c3a) are
+   the same pair already used elsewhere in the app for dark text on a cream
+   surface (see .home-quote-card) — reused here, not invented.
+   IMPORTANT: book spines (.book-spine and children) are NEVER themed here.
+   Spine colours encode the five Spellbound categories and are shared with
+   the Books tab pile — they must look identical whether they appear on a
+   dark surface (Books tab) or here. Where a spine needed more contrast
+   against this new light background, the fix is always the container behind
+   it (the pile shelf / intro shelf tray, both kept intentionally dark below)
+   or a selection indicator around it — never the spine itself. */
 #quest-overlay {
-  background:
-    radial-gradient(ellipse 100% 40% at 50% 0%, rgba(232,223,200,0.09), transparent 65%),
-    var(--bg);
+  background: #f5f0e4;
+  transition: opacity 0.22s ease;
+}
+/* Fades the whole overlay out before closeQuest() actually hides it, so the
+   handoff from this light theme back to the dark app underneath reads as an
+   intentional transition rather than a jarring hard cut. */
+#quest-overlay.quest-closing {
+  opacity: 0;
 }
 #quest-overlay .build-header {
-  background: var(--surface);
-  border-bottom: 1px solid rgba(232,223,200,0.16);
-  box-shadow: 0 1px 0 rgba(232,223,200,0.05);
+  background: #efe6d0;
+  border-bottom: 1px solid rgba(36,28,18,0.12);
+  box-shadow: none;
 }
 #quest-overlay .build-step-indicator {
   letter-spacing: 0.16em;
+  color: #241c12;
+}
+#quest-overlay .build-close-btn {
+  color: #5a4c3a;
+}
+#quest-overlay .build-close-btn:hover {
+  color: #241c12;
+  background: rgba(36,28,18,0.08);
 }
 #quest-overlay .build-next-btn {
-  background: linear-gradient(135deg, #f0e4c4, var(--accent2));
-  color: #141A16;
-  box-shadow: 0 2px 10px rgba(232,223,200,0.18);
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(233,69,96,0.35);
 }
 #quest-overlay .build-next-btn:active { opacity: 0.85; }
 #quest-overlay .build-skip-btn {
-  border-color: rgba(232,223,200,0.2);
-  color: var(--accent2);
+  border-color: rgba(36,28,18,0.22);
+  color: #5a4c3a;
 }
 .quest-progress {
   display: flex;
@@ -866,15 +889,15 @@ main { min-height: 100%; }
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.15);
+  background: rgba(36,28,18,0.15);
   transition: background 0.2s, transform 0.2s;
 }
 .quest-progress-dot.active {
-  background: var(--accent2);
+  background: var(--accent);
   transform: scale(1.3);
 }
 .quest-progress-dot.done {
-  background: var(--accent);
+  background: #241c12;
 }
 .quest-pile-shelf {
   flex-shrink: 0;
@@ -888,10 +911,13 @@ main { min-height: 100%; }
   overflow-y: auto;
   transition: height 0.2s ease;
   scrollbar-width: none; /* the 8-book cap is the primary fix; this is just a safety net beyond it */
+  /* Kept dark intentionally: a dark tray is what gives every spine's white
+     text/gold trim (tuned for a dark backdrop, same as the Books tab) its
+     contrast. This is the "fix the container, not the spines" approach. */
   background: var(--surface);
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 12px;
-  box-shadow: inset 0 3px 10px rgba(0,0,0,0.3);
+  box-shadow: 0 6px 18px rgba(36,28,18,0.22), inset 0 3px 10px rgba(0,0,0,0.3);
 }
 .quest-pile-shelf::-webkit-scrollbar { display: none; }
 .quest-pile-shelf .pile-stack {
@@ -923,7 +949,7 @@ main { min-height: 100%; }
   font-family: 'Caveat', cursive;
   font-size: 1.05rem;
   font-weight: 600;
-  color: var(--accent2);
+  color: var(--accent);
   min-height: 1em;
 }
 /* Vertically centers stage content so it fills the available screen instead
@@ -957,14 +983,27 @@ main { min-height: 100%; }
 
 /* Question-stage heading typography — a step up from the plain Build Essay
    .build-prompt/.build-prompt-small it's based on, scoped to #quest-overlay
-   only so Build Essay is unaffected. */
+   only so Build Essay is unaffected. Colors also overridden here: the base
+   classes assume Build Essay's dark surface (gold heading, muted-gray body)
+   which have poor contrast against the quest's light theme. */
 #quest-overlay .build-prompt {
   font-size: 1.32rem;
   line-height: 1.35;
+  color: #241c12;
 }
 #quest-overlay .build-prompt-small {
   font-size: 0.87rem;
+  color: #5a4c3a;
 }
+/* Stage 6's quote-capture textarea reuses the shared .build-textarea, which
+   assumes Build Essay's dark surface by default. */
+#quest-overlay .build-textarea {
+  background: #fff;
+  color: #241c12;
+  border-color: rgba(36,28,18,0.16);
+}
+#quest-overlay .build-textarea::placeholder { color: #9a8a70; }
+#quest-overlay .build-textarea:focus { border-color: var(--accent); }
 
 /* "Step N of 6" wayfinding label — useful position info the progress dots
    don't spell out in words, so a handwritten treatment earns its place
@@ -976,12 +1015,12 @@ main { min-height: 100%; }
   font-weight: 600;
   text-transform: none;
   letter-spacing: 0;
-  color: var(--accent2);
+  color: var(--accent);
 }
 
 .quest-note-sub {
   font-size: 0.8rem;
-  color: var(--text-muted);
+  color: #5a4c3a;
   margin: 0;
 }
 
@@ -992,64 +1031,18 @@ main { min-height: 100%; }
   font-family: 'Playfair Display', serif;
   font-size: 1.85rem;
   font-weight: 700;
-  color: var(--accent2);
+  color: #241c12;
   line-height: 1.3;
 }
 .quest-intro-sub {
   font-size: 0.95rem;
-  color: var(--text);
-  opacity: 0.85;
+  color: #5a4c3a;
   line-height: 1.6;
   margin-top: 0.4rem;
 }
 
-/* Paper-note treatment for the two "bookend" screens (intro + Find Your Next
-   Read handoff) — reuses the exact folded-corner/cream-card motif from the
-   Home tab's highlight quote cards (.home-quote-card) so the quest quotes
-   the app's own reading-journal aesthetic rather than inventing a new one.
-   Not used on the numbered question stages, which is the point: it visually
-   marks these two screens as a different kind of moment (a message, not a
-   question to answer). No tilt-on-hover (these cards aren't clickable) and
-   no rotation beyond the same static -0.3deg the Home cards use at rest. */
-.quest-note-card {
-  position: relative;
-  background: #f5f0e4;
-  border-radius: var(--radius);
-  border-top-right-radius: 0;
-  padding: 1.05rem 44px 1.15rem 1.15rem;
-  border-top: 4px solid var(--accent2);
-  box-shadow: 0 4px 18px rgba(0,0,0,0.45);
-  transform: rotate(-0.3deg);
-}
-.quest-note-card::before {
-  content: '';
-  position: absolute;
-  top: -4px; right: 0;
-  width: 34px; height: 34px;
-  background: linear-gradient(225deg, var(--bg) 50%, transparent 50%);
-  z-index: 1;
-}
-.quest-note-card::after {
-  content: '';
-  position: absolute;
-  top: -4px; right: 0;
-  width: 34px; height: 34px;
-  background: linear-gradient(45deg, #c8bc98 50%, transparent 50%);
-  box-shadow: -2px 2px 4px rgba(0,0,0,0.25);
-  z-index: 2;
-}
-.quest-note-card .quest-intro-heading,
-.quest-note-card .build-prompt {
-  color: #241c12;
-}
-.quest-note-card .quest-intro-sub,
-.quest-note-card .build-prompt-small {
-  color: #5a4c3a;
-  opacity: 1;
-}
 /* Short instruction line (e.g. "Fill in only the parts you feel strongly
-   about") — a plain aside, not a heading, so it stays at body-text scale
-   rather than the card's heading treatment. */
+   about") — a plain aside, not a heading, so it stays at body-text scale. */
 .quest-note-instruction {
   font-size: 0.95rem;
   font-weight: 600;
@@ -1062,14 +1055,19 @@ main { min-height: 100%; }
    example of what the pile will look like, not as a library already
    assigned to the user. Spines inside keep their normal full size/overlap
    (see _questIntroShelfHtml) — this scale is what makes the shelf read as
-   smaller, not any change to the spines themselves. */
+   smaller, not any change to the spines themselves. Given the same dark
+   tray backdrop as .quest-pile-shelf (rather than sitting directly on the
+   new light page) so it reads as a shelf, not floating spines. */
 .quest-intro-shelf {
-  padding: 4px 18px 20px;
+  padding: 14px 18px 24px;
   position: relative;
-  opacity: 0.55;
+  opacity: 0.65;
   transform: scale(0.85);
   transform-origin: top center;
   pointer-events: none;
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(36,28,18,0.22), inset 0 3px 10px rgba(0,0,0,0.3);
 }
 
 /* Selectable spine tiles — reuse the exact .book-spine shape/border
@@ -1080,7 +1078,7 @@ main { min-height: 100%; }
 }
 .quest-spine-option { width: 100%; }
 .quest-spine-option.selected {
-  box-shadow: 0 0 0 3px var(--accent2), 0 8px 14px rgba(0,0,0,0.65);
+  box-shadow: 0 0 0 3px var(--accent), 0 8px 14px rgba(0,0,0,0.65);
   z-index: 200 !important;
 }
 .quest-spine-check {
@@ -1096,15 +1094,16 @@ main { min-height: 100%; }
 }
 .quest-search-input {
   width: 100%;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: #fff;
+  color: #241c12;
+  border: 1px solid rgba(36,28,18,0.16);
   border-radius: 10px;
   padding: 12px 14px;
   font-size: 0.9rem;
   font-family: inherit;
 }
-.quest-search-input:focus { outline: none; border-color: var(--accent2); }
+.quest-search-input::placeholder { color: #9a8a70; }
+.quest-search-input:focus { outline: none; border-color: var(--accent); }
 .quest-search-results {
   margin-top: 8px;
   display: flex;
@@ -1115,12 +1114,13 @@ main { min-height: 100%; }
   display: flex;
   align-items: center;
   gap: 10px;
-  background: var(--surface);
+  background: #fff;
+  border: 1px solid rgba(36,28,18,0.1);
   border-radius: 8px;
   padding: 8px 10px;
   cursor: pointer;
 }
-.quest-search-result:hover { background: rgba(255,255,255,0.06); }
+.quest-search-result:hover { background: rgba(36,28,18,0.04); }
 .quest-search-result-thumb {
   width: 32px;
   height: 46px;
@@ -1129,7 +1129,7 @@ main { min-height: 100%; }
   flex-shrink: 0;
 }
 .quest-search-result-thumb-placeholder {
-  background: rgba(255,255,255,0.08);
+  background: rgba(36,28,18,0.08);
 }
 .quest-search-result-info {
   min-width: 0;
@@ -1137,21 +1137,21 @@ main { min-height: 100%; }
 .quest-search-result-title {
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text);
+  color: #241c12;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .quest-search-result-author {
   font-size: 0.75rem;
-  color: var(--text-muted);
+  color: #5a4c3a;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .quest-search-loading {
   font-size: 0.8rem;
-  color: var(--text-muted);
+  color: #5a4c3a;
   padding: 6px 0;
 }
 .quest-rating-options {
@@ -1160,9 +1160,9 @@ main { min-height: 100%; }
   gap: 10px;
 }
 .quest-rating-btn {
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: #fff;
+  color: #241c12;
+  border: 1px solid rgba(36,28,18,0.16);
   border-radius: 10px;
   padding: 14px 16px;
   font-size: 0.92rem;
@@ -1172,7 +1172,7 @@ main { min-height: 100%; }
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
-.quest-rating-btn:active { background: rgba(255,255,255,0.08); }
+.quest-rating-btn:active { background: rgba(36,28,18,0.06); }
 .quest-rating-note {
   margin-top: 0.4rem;
 }

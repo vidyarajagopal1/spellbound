@@ -4810,12 +4810,24 @@ async function openQuest() {
   _questState.readingIds   = _questState.readingIds   || [];
   _questState.queuedIds    = _questState.queuedIds    || [];
   _questState.highlightIds = _questState.highlightIds || [];
-  document.getElementById('quest-overlay').classList.remove('hidden');
+  const overlay = document.getElementById('quest-overlay');
+  overlay.classList.remove('quest-closing');
+  overlay.classList.remove('hidden');
   renderQuestStage();
 }
 
+// Fades the (now light-themed) quest overlay out before revealing the dark
+// app underneath, so the handoff between the two very different palettes
+// reads as a deliberate transition rather than a jarring hard cut. The class
+// only drives opacity; display:none is applied after the transition ends so
+// the fade actually has something to animate.
 function closeQuest() {
-  document.getElementById('quest-overlay').classList.add('hidden');
+  const overlay = document.getElementById('quest-overlay');
+  overlay.classList.add('quest-closing');
+  setTimeout(() => {
+    overlay.classList.add('hidden');
+    overlay.classList.remove('quest-closing');
+  }, 220);
 }
 
 async function _saveQuestState() {
@@ -4952,10 +4964,8 @@ function _renderQuestStage0(body) {
   body.innerHTML = `
     <div class="build-step quest-stage">
       <div class="quest-group">
-        <div class="quest-note-card">
-          <p class="quest-intro-heading">A shelf of your own, waiting to be filled.</p>
-          <p class="quest-intro-sub">Come on a quest. We'll start with a few books you know, and find your next great read along the way.</p>
-        </div>
+        <p class="quest-intro-heading">A shelf of your own, waiting to be filled.</p>
+        <p class="quest-intro-sub">Come on a quest. We'll start with a few books you know, and find your next great read along the way.</p>
       </div>
       <div class="quest-group">
         <div class="quest-intro-shelf">
@@ -5652,12 +5662,10 @@ function _renderQuestStage7(body) {
   body.innerHTML = `
     <div class="build-step quest-stage">
       <div class="quest-group">
-        <div class="quest-note-card">
-          <p class="quest-intro-heading">That's your shelf, and it'll keep growing.</p>
-          <p class="quest-intro-sub" id="quest-fnr-subcopy">${fiveOrMore
-            ? "Now for the part we promised. Let's find you something worth reading next."
-            : `Find Your Next Read works best with five to eight books in your pile. You've got ${_questSpellNumber(count)}.`}</p>
-        </div>
+        <p class="quest-intro-heading">That's your shelf, and it'll keep growing.</p>
+        <p class="quest-intro-sub" id="quest-fnr-subcopy">${fiveOrMore
+          ? "Now for the part we promised. Let's find you something worth reading next."
+          : `Find Your Next Read works best with five to eight books in your pile. You've got ${_questSpellNumber(count)}.`}</p>
       </div>
       <div class="quest-group" id="quest-fnr-add-more" style="display:none">
         ${_questFNRSearchBlockHtml()}
@@ -5768,9 +5776,7 @@ function questShowFNRIntermission() {
   body.innerHTML = `
     <div class="build-step quest-stage">
       <div class="quest-group">
-        <div class="quest-note-card">
-          <p class="quest-note-instruction">Fill in only the parts you feel strongly about.</p>
-        </div>
+        <p class="quest-note-instruction">Fill in only the parts you feel strongly about.</p>
       </div>
       <div class="build-nav">
         <button class="build-next-btn" onclick="questHandoffToFNR()">Continue &rarr;</button>
