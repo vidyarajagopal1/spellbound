@@ -1781,6 +1781,7 @@ main { min-height: 100%; }
   color: #141A16;
   border-color: var(--accent2);
   font-weight: 700;
+  box-shadow: 0 0 0 2px rgba(232,223,200,0.4);
 }
 .medium-btn:active { opacity: 0.8; }
 
@@ -3581,5 +3582,6 @@ main { min-height: 100%; }
   background: var(--accent);
   color: #fff;
   font-weight: 700;
+  box-shadow: 0 0 0 2px rgba(233,69,96,0.4);
 }
 
