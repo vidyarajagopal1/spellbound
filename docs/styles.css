@@ -921,6 +921,37 @@ main { min-height: 100%; }
   margin: 0;
 }
 
+/* Intro screen (Stage 0) heading/body — more prominent than the shared
+   .build-prompt/.build-prompt-small used by every other stage, since here
+   the copy (not a question to answer) is the whole point of the screen. */
+.quest-intro-heading {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: var(--accent2);
+  line-height: 1.35;
+}
+.quest-intro-sub {
+  font-size: 0.95rem;
+  color: var(--text);
+  opacity: 0.85;
+  line-height: 1.6;
+  margin-top: 0.4rem;
+}
+
+/* Intro pseudo shelf — illustrative only, never the real session pile.
+   Visually set back (dimmed, slightly smaller, non-interactive) so it
+   reads as an example of what the pile will look like, not as a library
+   already assigned to the user. */
+.quest-intro-shelf {
+  padding: 4px 18px 20px;
+  position: relative;
+  opacity: 0.55;
+  transform: scale(0.93);
+  transform-origin: top center;
+  pointer-events: none;
+}
+
 /* Selectable spine tiles — reuse the exact .book-spine shape/border
    treatment from the Books tab pile so these read as books on a shelf. */
 .quest-spine-list {
