@@ -4779,16 +4779,17 @@ let _questState = null;
 // 6, along with the real "no books" trigger. Until then, every run starts at
 // Stage 1 so testing isn't blocked by an unbuilt placeholder with no lit dot.
 function _newQuestState() {
-  return { stage: 1, pileIds: [], rereadIds: [], readingIds: [], queuedIds: [] };
+  return { stage: 1, pileIds: [], rereadIds: [], readingIds: [], queuedIds: [], highlightIds: [] };
 }
 
 async function openQuest() {
   _questState = await dbGetMeta('quest_state');
   if (!_questState) _questState = _newQuestState();
   // Defensive fallback for quest state saved before these tracking arrays existed.
-  _questState.rereadIds  = _questState.rereadIds  || [];
-  _questState.readingIds = _questState.readingIds || [];
-  _questState.queuedIds  = _questState.queuedIds  || [];
+  _questState.rereadIds    = _questState.rereadIds    || [];
+  _questState.readingIds   = _questState.readingIds   || [];
+  _questState.queuedIds    = _questState.queuedIds    || [];
+  _questState.highlightIds = _questState.highlightIds || [];
   // Backfill for quest_state persisted before Stage 0 was skipped — jump
   // straight to Stage 1 rather than showing the unbuilt intro placeholder.
   if (_questState.stage === 0) { _questState.stage = 1; await _saveQuestState(); }
@@ -4866,6 +4867,7 @@ function renderQuestStage() {
   if (stage === 3) { _renderQuestStage3(body); renderQuestPile(); return; }
   if (stage === 4) { _renderQuestStage4(body); renderQuestPile(); return; }
   if (stage === 5) { _renderQuestStage5(body); renderQuestPile(); return; }
+  if (stage === 6) { _renderQuestStage6(body); renderQuestPile(); return; }
 
   // Placeholder body so the shell can be exercised end to end before any
   // real stage content exists.
@@ -5301,6 +5303,240 @@ function _renderQuestStage5(body) {
     </div>`;
 
   _questUpdateMultiStageUI(5);
+}
+
+// ── Stage 6 — Highlights ────────────────────────────────────────────────────
+// Copy: docs/quest-copy.md "Stage 6 — Highlights". Three equal capture
+// routes (Write it / Record it / Take a picture) map to the app's existing
+// typed, voice and OCR capture paths respectively. After capturing, the
+// pile is offered for book attachment ("Which book?") — skipped silently
+// when the pile holds exactly one book. Multiple highlights can be added in
+// one visit; `_questState.highlightIds` (per-visit tracking, same pattern as
+// rereadIds/readingIds/queuedIds) only decides the advance button's label.
+
+let _quest6Recognition  = null; // active SpeechRecognition instance, if any
+let _quest6PendingText  = null; // captured quote text awaiting book attachment
+
+function _renderQuestStage6(body) {
+  const added = (_questState.highlightIds || []).length > 0;
+  body.innerHTML = `
+    <div class="build-step quest-stage">
+      <div class="quest-group">
+        <p class="build-prompt">Any lines you find yourself quoting?</p>
+      </div>
+      <div class="quest-group">
+        <div class="quest-rating-options">
+          <button type="button" class="quest-rating-btn" onclick="questStage6StartCapture('write')">Write it</button>
+          <button type="button" class="quest-rating-btn" onclick="questStage6StartCapture('record')">Record it</button>
+          <button type="button" class="quest-rating-btn" onclick="questStage6StartCapture('picture')">Take a picture</button>
+        </div>
+        <p class="quest-note-sub quest-rating-note">We'll keep them in your Highlights, so your notes app can't lose them.</p>
+      </div>
+      <div class="build-nav">
+        <button class="build-skip-btn" onclick="questGoToStage(5)">&larr; Back</button>
+        <button class="build-next-btn" id="quest-stage6-advance" onclick="questGoToStage(7)">${added ? 'Continue' : "Can't think of one"}</button>
+      </div>
+    </div>`;
+}
+
+// Opens the capture screen for the chosen route. All three routes share the
+// same editable textarea — voice and OCR just populate it for the user to
+// review/edit before saving, exactly like the existing Add Highlight form.
+function questStage6StartCapture(route) {
+  const body = document.getElementById('quest-body');
+  if (!body) return;
+  body.innerHTML = `
+    <div class="build-step quest-stage">
+      <div class="quest-group">
+        <p class="build-prompt">Any lines you find yourself quoting?</p>
+      </div>
+      <div class="quest-group">
+        <textarea class="build-textarea" id="quest6-capture-text" placeholder="Type or paste the quote" oninput="questStage6TextInput()"></textarea>
+        <p class="quest-note-sub" id="quest6-capture-status"></p>
+      </div>
+      <input type="file" id="quest6-image-input" accept="image/*" style="display:none" onchange="questStage6HandleImageFile(event)">
+      <div class="build-nav">
+        <button class="build-skip-btn" onclick="questStage6CancelCapture()">&larr; Back</button>
+        <button class="build-next-btn" id="quest-stage6-save" onclick="questStage6SaveCapture()" disabled>Save quote</button>
+      </div>
+    </div>`;
+
+  const textarea = document.getElementById('quest6-capture-text');
+  if (route === 'record') {
+    _quest6StartVoiceCapture(textarea);
+  } else if (route === 'picture') {
+    document.getElementById('quest6-image-input').click();
+  } else {
+    textarea.focus();
+  }
+}
+
+function questStage6TextInput() {
+  const textarea = document.getElementById('quest6-capture-text');
+  const btn      = document.getElementById('quest-stage6-save');
+  if (btn) btn.disabled = !textarea.value.trim();
+}
+
+function _quest6StartVoiceCapture(textarea) {
+  const statusEl = document.getElementById('quest6-capture-status');
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    if (statusEl) statusEl.textContent = "Voice input isn't supported in this browser. Type it instead.";
+    textarea.focus();
+    return;
+  }
+  const recognition          = new SpeechRecognition();
+  recognition.lang           = 'en-US';
+  recognition.interimResults = true;
+  recognition.continuous     = false;
+  _quest6Recognition = recognition;
+  if (statusEl) statusEl.textContent = 'Listening\u2026';
+
+  recognition.onresult = e => {
+    let interim = '', final = '';
+    for (const result of e.results) {
+      if (result.isFinal) final   += result[0].transcript;
+      else                interim += result[0].transcript;
+    }
+    textarea.value = final || interim;
+    questStage6TextInput();
+  };
+  recognition.onend = () => {
+    _quest6Recognition = null;
+    if (statusEl) statusEl.textContent = '';
+  };
+  recognition.onerror = () => {
+    _quest6Recognition = null;
+    if (statusEl) statusEl.textContent = 'Voice input failed. Type it instead.';
+  };
+  recognition.start();
+}
+
+// OCR path — reuses the same _tesseractWorker instance/lazy-load pattern as
+// the existing Add Highlight image import, so the (slow) first-load engine
+// download only ever happens once per session regardless of entry point.
+async function questStage6HandleImageFile(event) {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  const statusEl = document.getElementById('quest6-capture-status');
+  const textarea = document.getElementById('quest6-capture-text');
+  if (statusEl) statusEl.textContent = 'Loading OCR engine\u2026 (first use may take ~10s)';
+
+  try {
+    if (!_tesseractWorker) {
+      _tesseractWorker = await Tesseract.createWorker('eng', 1, {
+        logger: m => {
+          if (!statusEl) return;
+          if (m.status === 'loading tesseract core')            statusEl.textContent = 'Loading OCR engine\u2026';
+          else if (m.status === 'initializing tesseract')       statusEl.textContent = 'Initialising\u2026';
+          else if (m.status === 'loading language traineddata') statusEl.textContent = 'Loading language data\u2026';
+          else if (m.status === 'initializing api')              statusEl.textContent = 'Initialising API\u2026';
+          else if (m.status === 'recognizing text')              statusEl.textContent = 'Extracting text\u2026';
+        }
+      });
+    } else if (statusEl) {
+      statusEl.textContent = 'Extracting text\u2026';
+    }
+
+    const result = await _tesseractWorker.recognize(file);
+    textarea.value = result.data.text.trim();
+    questStage6TextInput();
+    if (statusEl) statusEl.textContent = 'Done \u2014 review and edit the text below';
+  } catch (err) {
+    console.error('Quest Stage 6 OCR failed', err);
+    if (statusEl) statusEl.textContent = 'OCR failed. Please type the text manually.';
+  }
+}
+
+function questStage6CancelCapture() {
+  if (_quest6Recognition) { _quest6Recognition.stop(); _quest6Recognition = null; }
+  renderQuestStage(); // back to the route-selection screen
+}
+
+async function questStage6SaveCapture() {
+  if (_quest6Recognition) { _quest6Recognition.stop(); _quest6Recognition = null; }
+  const textarea = document.getElementById('quest6-capture-text');
+  const text     = (textarea?.value || '').trim();
+  if (!text) return;
+
+  const pileBooks = _questState.pileIds.map(id => books.find(b => b.id === id)).filter(Boolean);
+  if (pileBooks.length <= 1) {
+    // Skipped silently — attaches to the sole pile book (or unattached, in
+    // the edge case of an empty pile) with no "Which book?" step shown.
+    await _questSaveHighlight(text, pileBooks[0] ? pileBooks[0].id : null);
+    renderQuestStage();
+  } else {
+    _quest6PendingText = text;
+    _questRenderStage6Attachment();
+  }
+}
+
+async function _questSaveHighlight(text, bookId) {
+  const h = { id: nextId(highlights), text, bookId: bookId || null, whyItStayed: '', date: '', savedAt: new Date().toISOString() };
+  await dbPut('highlights', h);
+  await saveAndSync();
+  _questState.highlightIds = _questState.highlightIds || [];
+  _questState.highlightIds.push(h.id);
+  await _saveQuestState();
+}
+
+// Book attachment picker. Non-importers choose from the session pile only
+// ("the pile appears for book attachment", per spec). Importers get the
+// same whole-library-plus-live-search-filter treatment as Stage 3's grid,
+// per the spec's explicit "same live search filter as Stage 3" instruction.
+function _questStage6AttachmentCandidates() {
+  return _questHasImportedLibrary()
+    ? _questRereadCandidates()
+    : _questState.pileIds.map(id => books.find(b => b.id === id)).filter(Boolean);
+}
+
+function _questStage6AttachGridHtml(candidates, filterValue) {
+  const q = (filterValue || '').trim().toLowerCase();
+  const filtered = q
+    ? candidates.filter(b => (b.title || '').toLowerCase().includes(q) || (b.author || '').toLowerCase().includes(q))
+    : candidates;
+  if (filtered.length === 0) return '<p class="quest-note-sub">No matches in your library.</p>';
+  return filtered.map((b, i) => _questSpineOptionHtml(b, i, filtered.length, false, `questStage6Attach(${b.id})`)).join('');
+}
+
+function _questRenderStage6Attachment() {
+  const body = document.getElementById('quest-body');
+  if (!body) return;
+  const isImporter = _questHasImportedLibrary();
+  const candidates  = _questStage6AttachmentCandidates();
+
+  const searchHtml = isImporter ? `
+      <div class="quest-group">
+        <input type="search" class="quest-search-input" id="quest6-attach-filter" placeholder="Search for books" oninput="_questRenderStage6AttachGrid(this.value)" autocomplete="off">
+      </div>` : '';
+
+  body.innerHTML = `
+    <div class="build-step quest-stage">
+      <div class="quest-group">
+        <p class="build-prompt">Which book?</p>
+      </div>
+      ${searchHtml}
+      <div class="quest-group">
+        <div class="quest-spine-list" id="quest6-attach-grid">
+          ${_questStage6AttachGridHtml(candidates, '')}
+        </div>
+      </div>
+    </div>`;
+}
+
+function _questRenderStage6AttachGrid(filterValue) {
+  const grid = document.getElementById('quest6-attach-grid');
+  if (!grid) return;
+  grid.innerHTML = _questStage6AttachGridHtml(_questStage6AttachmentCandidates(), filterValue);
+}
+
+async function questStage6Attach(bookId) {
+  const text = _quest6PendingText;
+  _quest6PendingText = null;
+  if (!text) { renderQuestStage(); return; }
+  await _questSaveHighlight(text, bookId);
+  renderQuestStage(); // back to Stage 6 route-selection, advance button now says Continue
 }
 
 // Shared pile component — a filtered view of the library showing only books
