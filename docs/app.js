@@ -1210,7 +1210,7 @@ function debounceBookLookup(form) {
   const sugEl   = document.getElementById(_sugElId(form));
   if (!titleEl || !sugEl) return;
   const title = titleEl.value.trim();
-  if (title.length < 2) { sugEl.classList.add('hidden'); sugEl.classList.remove('search-loading'); sugEl.innerHTML = ''; delete sugEl.dataset.query; return; }
+  if (title.length < 4) { sugEl.classList.add('hidden'); sugEl.classList.remove('search-loading'); sugEl.innerHTML = ''; delete sugEl.dataset.query; return; }
   sugEl.classList.remove('hidden');
   sugEl.classList.remove('search-loading');
   if (sugEl.querySelector('.book-suggestion-card')) {
@@ -1244,7 +1244,9 @@ async function fetchBookSuggestions(title, form) {
     return;
   }
   if (items.length === 0) {
-    sugEl.innerHTML = '<p class="book-lookup-loading">No results found.</p>';
+    sugEl.innerHTML = items._incomplete
+      ? '<p class="book-lookup-loading">Keep typing.</p>'
+      : '<p class="book-lookup-loading">No results found.</p>';
     return;
   }
   renderBookSuggestions(items.slice(0, 5), form, sugEl);
@@ -1279,6 +1281,7 @@ function applyBookSuggestion(index, form) {
   const sugEl = document.getElementById(_sugElId(form));
   const s     = sugEl._suggestions[index];
   if (!s) return;
+  delete sugEl.dataset.query;
   if (form === 'add') {
     document.getElementById('book-title-input').value   = s.title;
     document.getElementById('book-author-input').value  = s.author;
@@ -2084,6 +2087,16 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, author =
 // still being typed is always dropped first, so every word actually sent is
 // complete — the earlier unquoted form existed only to allow partial words,
 // which no longer applies.
+//
+// When the whole cleaned query is a single word, that word may simply be
+// unfinished — Google matches whole tokens only (no wildcard/prefix match),
+// so an incomplete word is structurally guaranteed to return nothing even
+// though the book may well exist. This is NOT the same as a genuine "no
+// matches" for a complete, multi-word query. Callers need to tell these
+// apart, so when the returned array is empty AND the query was a single
+// word, this function marks it by setting `results._incomplete = true` on
+// the (empty) array — callers should check that flag and show "Keep
+// typing." instead of "No results found." in that case.
 const GB_STOPWORDS = new Set(['the','a','an','of','and','or','in','on','to','for','at','by','is','it']);
 
 let _gbIncrementalCache = { key: null, items: null };
@@ -2094,6 +2107,7 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
   if (!cleaned) return [];
   const q = cleaned.toLowerCase();
   const words = cleaned.split(' ');
+  const isSingleWord = words.length === 1;
   let sendWords = cleaned;
   if (words.length > 1) {
     const leading = words.slice(0, -1).join(' ');
@@ -2102,7 +2116,11 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
   // If every word we'd send is a common stopword, the API would just return
   // thirty arbitrary books that the local filter discards anyway — skip the
   // round trip entirely.
-  if (sendWords.split(' ').every(w => GB_STOPWORDS.has(w.toLowerCase()))) return [];
+  if (sendWords.split(' ').every(w => GB_STOPWORDS.has(w.toLowerCase()))) {
+    const empty = [];
+    if (isSingleWord) empty._incomplete = true;
+    return empty;
+  }
   let items;
   if (_gbIncrementalCache.key === sendWords) {
     items = _gbIncrementalCache.items;
@@ -2151,7 +2169,9 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
       return a.i - b.i; // stable within a tier
     })
     .map(x => x.r);
-  return results.slice(0, maxResults);
+  results = results.slice(0, maxResults);
+  if (results.length === 0 && isSingleWord) results._incomplete = true;
+  return results;
 }
 
 async function fetchWishlistDescription(item) {
@@ -3247,7 +3267,7 @@ function fnrDebouncedBookSearch() {
   clearTimeout(_fnrSearchTimer);
   const val = document.getElementById('fnr-book-search').value.trim();
   document.getElementById('fnr-book-value').value = '';
-  if (val.length < 2) {
+  if (val.length < 4) {
     const sugEl = document.getElementById('fnr-book-suggestions');
     sugEl.classList.add('hidden');
     sugEl.classList.remove('search-loading');
@@ -3261,7 +3281,7 @@ function fnrDebouncedAuthorSearch() {
   clearTimeout(_fnrSearchTimer);
   const val = document.getElementById('fnr-author-search').value.trim();
   document.getElementById('fnr-author-value').value = '';
-  if (val.length < 2) {
+  if (val.length < 4) {
     const sugEl = document.getElementById('fnr-author-suggestions');
     sugEl.classList.add('hidden');
     sugEl.classList.remove('search-loading');
@@ -3290,7 +3310,7 @@ async function _fnrFetchBooks(query) {
     fullTitle: item.fullTitle || item.title || '',
     author:    (item.author_name || []).join(', '),
   })).filter(i => i.title).slice(0, 5);
-  if (!items.length) { sugEl.innerHTML = '<p class="fnr-lookup-loading">No results.</p>'; return; }
+  if (!items.length) { sugEl.innerHTML = results._incomplete ? '<p class="fnr-lookup-loading">Keep typing.</p>' : '<p class="fnr-lookup-loading">No results.</p>'; return; }
   sugEl.innerHTML = items.map(i =>
     `<div class="fnr-suggestion-item" onclick="fnrSelectBook('${i.title.replace(/'/g,"\\'")}','${i.author.replace(/'/g,"\\'")}')">
       <span class="fnr-sug-title">${escapeHtml(i.fullTitle)}</span>
@@ -3328,13 +3348,17 @@ async function _fnrFetchAuthors(query) {
 function fnrSelectBook(title, author) {
   document.getElementById('fnr-book-search').value = title + (author ? ` — ${author}` : '');
   document.getElementById('fnr-book-value').value  = title;
-  document.getElementById('fnr-book-suggestions').classList.add('hidden');
+  const sugEl = document.getElementById('fnr-book-suggestions');
+  sugEl.classList.add('hidden');
+  delete sugEl.dataset.query;
 }
 
 function fnrSelectAuthor(name) {
   document.getElementById('fnr-author-search').value = name;
   document.getElementById('fnr-author-value').value  = name;
-  document.getElementById('fnr-author-suggestions').classList.add('hidden');
+  const sugEl = document.getElementById('fnr-author-suggestions');
+  sugEl.classList.add('hidden');
+  delete sugEl.dataset.query;
 }
 
 document.addEventListener('click', e => {
@@ -5295,7 +5319,7 @@ function questStage1SearchInput(value) {
   const resultsEl = document.getElementById('quest-search-results-1');
   if (!resultsEl) return;
   const q = value.trim();
-  if (q.length < 2) { resultsEl.innerHTML = ''; resultsEl.classList.remove('search-loading'); delete resultsEl.dataset.query; return; }
+  if (q.length < 4) { resultsEl.innerHTML = ''; resultsEl.classList.remove('search-loading'); delete resultsEl.dataset.query; return; }
   if (resultsEl.querySelector('.quest-search-result')) {
     resultsEl.classList.add('search-loading');
   } else {
@@ -5308,7 +5332,7 @@ function questStage1SearchInput(value) {
     if (resultsEl.dataset.query !== q) return; // a newer keystroke already superseded this request
     resultsEl.classList.remove('search-loading');
     if (!items)          { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
-    if (items.length === 0) { resultsEl.innerHTML = '<p class="quest-search-loading">No results found.</p>'; return; }
+    if (items.length === 0) { resultsEl.innerHTML = items._incomplete ? '<p class="quest-search-loading">Keep typing.</p>' : '<p class="quest-search-loading">No results found.</p>'; return; }
     resultsEl._items = items;
     resultsEl.innerHTML = items.map((item, i) => `
       <div class="quest-search-result" onclick="questStage1SearchSelect(${i})">
@@ -5325,6 +5349,7 @@ async function questStage1SearchSelect(index) {
   const resultsEl = document.getElementById('quest-search-results-1');
   const item = resultsEl?._items?.[index];
   if (!item) return;
+  delete resultsEl.dataset.query;
   try {
     const book = await _questCreateBookFromSearchResult(item, 'Completed');
     _questState.pileIds = [book.id];
@@ -5442,7 +5467,7 @@ function questMultiSearchInput(value, stageNum) {
   const resultsEl = document.getElementById(`quest-search-results-${stageNum}`);
   if (!resultsEl) return;
   const q = value.trim();
-  if (q.length < 2) { resultsEl.innerHTML = ''; resultsEl.classList.remove('search-loading'); delete resultsEl.dataset.query; return; }
+  if (q.length < 4) { resultsEl.innerHTML = ''; resultsEl.classList.remove('search-loading'); delete resultsEl.dataset.query; return; }
   if (resultsEl.querySelector('.quest-search-result')) {
     resultsEl.classList.add('search-loading');
   } else {
@@ -5455,7 +5480,7 @@ function questMultiSearchInput(value, stageNum) {
     if (resultsEl.dataset.query !== q) return; // a newer keystroke already superseded this request
     resultsEl.classList.remove('search-loading');
     if (!items)              { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
-    if (items.length === 0) { resultsEl.innerHTML = '<p class="quest-search-loading">No results found.</p>'; return; }
+    if (items.length === 0) { resultsEl.innerHTML = items._incomplete ? '<p class="quest-search-loading">Keep typing.</p>' : '<p class="quest-search-loading">No results found.</p>'; return; }
     resultsEl._items = items;
     resultsEl.innerHTML = items.map((item, i) => `
       <div class="quest-search-result" onclick="questMultiSearchSelect(${stageNum}, ${i})">
@@ -5472,6 +5497,7 @@ async function questMultiSearchSelect(stageNum, index) {
   const resultsEl = document.getElementById(`quest-search-results-${stageNum}`);
   const item = resultsEl?._items?.[index];
   if (!item) return;
+  delete resultsEl.dataset.query;
   const cfg = QUEST_MULTI_STAGE_CONFIG[stageNum];
   try {
     const book = await _questCreateBookFromSearchResult(item, cfg.statusForNew);
@@ -5876,7 +5902,7 @@ function questFNRSearchInput(value) {
   const resultsEl = document.getElementById('quest-search-results-7');
   if (!resultsEl) return;
   const q = value.trim();
-  if (q.length < 2) { resultsEl.innerHTML = ''; resultsEl.classList.remove('search-loading'); delete resultsEl.dataset.query; return; }
+  if (q.length < 4) { resultsEl.innerHTML = ''; resultsEl.classList.remove('search-loading'); delete resultsEl.dataset.query; return; }
   if (resultsEl.querySelector('.quest-search-result')) {
     resultsEl.classList.add('search-loading');
   } else {
@@ -5889,7 +5915,7 @@ function questFNRSearchInput(value) {
     if (resultsEl.dataset.query !== q) return; // a newer keystroke already superseded this request
     resultsEl.classList.remove('search-loading');
     if (!items)              { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
-    if (items.length === 0) { resultsEl.innerHTML = '<p class="quest-search-loading">No results found.</p>'; return; }
+    if (items.length === 0) { resultsEl.innerHTML = items._incomplete ? '<p class="quest-search-loading">Keep typing.</p>' : '<p class="quest-search-loading">No results found.</p>'; return; }
     resultsEl._items = items;
     resultsEl.innerHTML = items.map((item, i) => `
       <div class="quest-search-result" onclick="questFNRSearchSelect(${i})">
@@ -5906,6 +5932,7 @@ async function questFNRSearchSelect(index) {
   const resultsEl = document.getElementById('quest-search-results-7');
   const item = resultsEl?._items?.[index];
   if (!item) return;
+  delete resultsEl.dataset.query;
   try {
     const book = await _questCreateBookFromSearchResult(item, 'Completed');
     await questAddBookToPile(book.id);
