@@ -1765,7 +1765,7 @@ main { min-height: 100%; }
   display: flex;
   gap: 8px;
 }
-.medium-btn {
+.medium-btn-group button.medium-btn {
   flex: 1;
   background: var(--surface);
   color: var(--text-muted);
@@ -1777,7 +1777,7 @@ main { min-height: 100%; }
   transition: background 0.15s, border-color 0.15s, color 0.15s, font-weight 0.15s;
   font-family: inherit;
 }
-.medium-btn.active {
+button.medium-btn.active {
   background: var(--selected);
   border-color: var(--selected);
   color: #141A16;
@@ -3566,7 +3566,7 @@ main { min-height: 100%; }
   gap: 8px;
   margin-bottom: 12px;
 }
-.rating-btn {
+.rating-btn-group button.rating-btn {
   background: var(--surface);
   color: var(--text-muted);
   border: 1px solid rgba(255,255,255,0.08);
@@ -3577,7 +3577,7 @@ main { min-height: 100%; }
   text-align: left;
   transition: background 0.15s, border-color 0.15s, color 0.15s, font-weight 0.15s;
 }
-.rating-btn.active {
+button.rating-btn.active {
   background: var(--selected);
   border-color: var(--selected);
   color: #141A16;
