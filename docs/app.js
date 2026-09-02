@@ -2984,10 +2984,18 @@ let _fnrResults    = [];    // current 5 results on screen
 let _fnrSearchTimer = null;
 let _fnrSessionRejected = []; // {title, author} replaced/rejected earlier in this sitting; cleared on fresh open
 let _fnrRejectedSlots   = new Set(); // slot indices currently marked as permanently rejected (dimmed state)
+let _fnrQuestMode = false; // true when opened via the quest's Find Your Next Read handoff (see questHandoffToFNR)
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
-function openFindNextRead() {
+// `fromQuest` is set by the quest's Stage 7 handoff (questHandoffToFNR). It
+// switches on quest-only copy/UI: the "Fill in only the parts you feel
+// strongly about." reassurance note, the quest-specific failure message, and
+// the "Go to Home" / "See my shelf" exit buttons after a recommendation —
+// see docs/quest-copy.md "Find Your Next Read". Normal Wishlist-tab entry
+// (the only other caller) omits the argument and behaves exactly as before.
+function openFindNextRead(fromQuest = false) {
+  _fnrQuestMode = fromQuest;
   _fnrFormState = null;
   _fnrSessionRejected = [];
   _fnrRejectedSlots = new Set();
@@ -2996,6 +3004,8 @@ function openFindNextRead() {
   document.getElementById('fnr-form-section').style.display    = 'block';
   document.getElementById('fnr-results-section').style.display = 'none';
   document.getElementById('fnr-edit-prefs-btn').classList.add('hidden');
+  document.getElementById('fnr-quest-note').classList.toggle('hidden', !_fnrQuestMode);
+  document.getElementById('fnr-quest-exit').classList.add('hidden');
   _fnrRenderPills();
 }
 
@@ -3366,9 +3376,11 @@ async function submitFindNextRead() {
     document.getElementById('fnr-form-section').style.display    = 'block';
     document.getElementById('fnr-edit-prefs-btn').classList.add('hidden');
     const errEl = document.getElementById('fnr-form-error');
-    errEl.textContent = _lastAICallError
-      ? `AI error: ${_lastAICallError}`
-      : 'AI features need an access code — go to Settings to add one, then try again.';
+    errEl.textContent = _fnrQuestMode
+      ? "We couldn't reach the service. Check your connection and try Find Your Next Read from the Wishlist tab."
+      : _lastAICallError
+        ? `AI error: ${_lastAICallError}`
+        : 'AI features need an access code — go to Settings to add one, then try again.';
     errEl.classList.remove('hidden');
     return;
   }
@@ -3383,13 +3395,16 @@ async function submitFindNextRead() {
     document.getElementById('fnr-form-section').style.display    = 'block';
     document.getElementById('fnr-edit-prefs-btn').classList.add('hidden');
     const errEl = document.getElementById('fnr-form-error');
-    errEl.textContent = 'Could not parse AI response. Please try again.';
+    errEl.textContent = _fnrQuestMode
+      ? "We couldn't reach the service. Check your connection and try Find Your Next Read from the Wishlist tab."
+      : 'Could not parse AI response. Please try again.';
     errEl.classList.remove('hidden');
     return;
   }
 
   _fnrResults = results;
   _fnrRenderResults();
+  document.getElementById('fnr-quest-exit').classList.toggle('hidden', !_fnrQuestMode);
 }
 
 // ── Results rendering ─────────────────────────────────────────────────────────
@@ -4868,6 +4883,7 @@ function renderQuestStage() {
   if (stage === 4) { _renderQuestStage4(body); renderQuestPile(); return; }
   if (stage === 5) { _renderQuestStage5(body); renderQuestPile(); return; }
   if (stage === 6) { _renderQuestStage6(body); renderQuestPile(); return; }
+  if (stage === 7) { _renderQuestStage7(body); renderQuestPile(); return; }
 
   // Placeholder body so the shell can be exercised end to end before any
   // real stage content exists.
@@ -5537,6 +5553,126 @@ async function questStage6Attach(bookId) {
   if (!text) { renderQuestStage(); return; }
   await _questSaveHighlight(text, bookId);
   renderQuestStage(); // back to Stage 6 route-selection, advance button now says Continue
+}
+
+// ── Find Your Next Read handoff ─────────────────────────────────────────────
+// Copy: docs/quest-copy.md "Find Your Next Read". Runs after Stage 6 as
+// stage 7 — deliberately NOT rendered as a numbered stage (renderQuestStage's
+// progress-dot/header logic already treats stage > QUEST_STAGE_COUNT as
+// "Find Your Next Read" with no dots, matching the spec's "the payoff the
+// intro promised, not a seventh stage"). This gate hands off to the existing
+// Find Your Next Read feature (Wishlist tab) rather than re-implementing the
+// form inside the quest overlay — see questHandoffToFNR().
+
+function _questFNRPileBooks() {
+  return _questState.pileIds.map(id => books.find(b => b.id === id)).filter(Boolean);
+}
+
+function _renderQuestStage7(body) {
+  const count      = _questFNRPileBooks().length;
+  const fiveOrMore = count >= 5;
+
+  body.innerHTML = `
+    <div class="build-step quest-stage">
+      <div class="quest-group">
+        <p class="build-prompt">That's your shelf, and it'll keep growing.</p>
+        <p class="build-prompt-small" id="quest-fnr-subcopy">${fiveOrMore
+          ? "Now for the part we promised. Let's find you something worth reading next."
+          : `Find Your Next Read works best with five to eight books in your pile. You've got ${count}.`}</p>
+      </div>
+      <div class="quest-group" id="quest-fnr-add-more" style="display:none">
+        ${_questFNRSearchBlockHtml()}
+      </div>
+      <div class="build-nav" id="quest-fnr-gate-actions">
+        ${fiveOrMore
+          ? `<button class="build-next-btn" onclick="questHandoffToFNR()">Continue</button>`
+          : `<button class="build-skip-btn" onclick="questFNRShowAddMore()">Add a few more</button>
+             <button class="build-next-btn" onclick="questHandoffToFNR()">Go ahead anyway</button>`}
+      </div>
+    </div>`;
+}
+
+// "Add a few more" opens a search field in place on the same screen (per
+// spec, "not a jump back through the stages") rather than navigating
+// anywhere. Reveals the already-rendered (hidden) search group.
+function questFNRShowAddMore() {
+  const group = document.getElementById('quest-fnr-add-more');
+  if (group) group.style.display = 'flex';
+  document.getElementById('quest-search-input-7')?.focus();
+}
+
+function _questFNRSearchBlockHtml() {
+  return `
+    <div class="quest-search">
+      <input type="search" class="quest-search-input" id="quest-search-input-7" placeholder="Search for books" oninput="questFNRSearchInput(this.value)" autocomplete="off">
+      <div class="quest-search-results" id="quest-search-results-7"></div>
+    </div>`;
+}
+
+function questFNRSearchInput(value) {
+  clearTimeout(_questSearchTimer);
+  const resultsEl = document.getElementById('quest-search-results-7');
+  if (!resultsEl) return;
+  const q = value.trim();
+  if (q.length < 2) { resultsEl.innerHTML = ''; return; }
+  resultsEl.innerHTML = '<p class="quest-search-loading">Searching…</p>';
+  _questSearchTimer = setTimeout(async () => {
+    const items = await googleBooksSearch(q, { maxResults: 8, field: 'intitle' });
+    if (!items)              { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
+    if (items.length === 0) { resultsEl.innerHTML = '<p class="quest-search-loading">No results found.</p>'; return; }
+    resultsEl._items = items;
+    resultsEl.innerHTML = items.map((item, i) => `
+      <div class="quest-search-result" onclick="questFNRSearchSelect(${i})">
+        ${item.thumb ? `<img class="quest-search-result-thumb" src="${item.thumb}" alt="">` : '<div class="quest-search-result-thumb quest-search-result-thumb-placeholder"></div>'}
+        <div class="quest-search-result-info">
+          <div class="quest-search-result-title">${escapeHtml(item.fullTitle || item.title)}</div>
+          ${item.author_name?.length ? `<div class="quest-search-result-author">${escapeHtml(item.author_name.join(', '))}</div>` : ''}
+        </div>
+      </div>`).join('');
+  }, 350);
+}
+
+async function questFNRSearchSelect(index) {
+  const resultsEl = document.getElementById('quest-search-results-7');
+  const item = resultsEl?._items?.[index];
+  if (!item) return;
+  try {
+    const book = await _questCreateBookFromSearchResult(item, 'Completed');
+    await questAddBookToPile(book.id);
+    resultsEl.innerHTML = '';
+    const input = document.getElementById('quest-search-input-7');
+    if (input) { input.value = ''; input.focus(); }
+
+    // Live count update in place — the search field stays open (per spec)
+    // rather than the screen re-rendering from scratch.
+    const count = _questFNRPileBooks().length;
+    const subcopyEl = document.getElementById('quest-fnr-subcopy');
+    if (subcopyEl) {
+      subcopyEl.textContent = count >= 5
+        ? "Now for the part we promised. Let's find you something worth reading next."
+        : `Find Your Next Read works best with five to eight books in your pile. You've got ${count}.`;
+    }
+    const actionsEl = document.getElementById('quest-fnr-gate-actions');
+    if (actionsEl && count >= 5) {
+      actionsEl.innerHTML = `<button class="build-next-btn" onclick="questHandoffToFNR()">Continue</button>`;
+    }
+  } catch (err) {
+    console.error('questFNRSearchSelect failed', err);
+    resultsEl.innerHTML = '<p class="quest-search-loading">Something went wrong adding that book. Check the console for details.</p>';
+  }
+}
+
+// Hands off from the quest overlay to the existing Find Your Next Read
+// feature (Wishlist tab), rather than re-implementing its form inside the
+// quest — "Then the FNR form opens" per spec. openFindNextRead(true) flags
+// quest mode so the form shows its reassurance copy, the failure state
+// shows the quest-specific message, and the results screen gets the two
+// quest exit buttons (see openFindNextRead / submitFindNextRead / the
+// #fnr-quest-note / #fnr-quest-exit elements in index.html).
+function questHandoffToFNR() {
+  closeQuest();
+  showView('wishlist');
+  openFindNextRead(true);
 }
 
 // Shared pile component — a filtered view of the library showing only books

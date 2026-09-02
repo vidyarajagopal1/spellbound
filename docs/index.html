@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=146">
+  <link rel="stylesheet" href="styles.css?v=147">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
@@ -197,6 +197,7 @@
         <!-- Form section -->
         <div id="fnr-form-section">          <p class="fnr-ornament">✦</p>          <h2 class="fnr-title">Find Your Next Read</h2>
           <p class="fnr-intro">The best part of reading is knowing there's another book waiting. Let's find yours.</p>
+          <p class="quest-note-sub hidden" id="fnr-quest-note">Fill in only the parts you feel strongly about.</p>
 
           <!-- Prompt 1: Genre mood -->
           <div class="fnr-prompt">
@@ -263,6 +264,10 @@
         <!-- Results section -->
         <div id="fnr-results-section" style="display:none">
           <div id="fnr-results-list"></div>
+          <div class="build-nav fnr-quest-exit hidden" id="fnr-quest-exit">
+            <button class="build-skip-btn" onclick="showView('home')">Go to Home</button>
+            <button class="build-next-btn" onclick="showView('books')">See my shelf</button>
+          </div>
         </div>
       </div>
     </div>
@@ -732,7 +737,7 @@
   <script src="purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="app.js?v=146"></script>
+  <script src="app.js?v=147"></script>
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 

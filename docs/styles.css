@@ -2930,6 +2930,14 @@ main { min-height: 100%; }
   to   { transform: rotate(360deg); }
 }
 
+/* Quest handoff exit buttons, shown after a recommendation only when Find
+   Your Next Read was reached via the quest (see #fnr-quest-exit / _fnrQuestMode). */
+.fnr-quest-exit {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
 /* ─── VOICE INPUT ────────────────────────────────────────────────────────────── */
 .voice-field {
   position: relative;
