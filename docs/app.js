@@ -2050,10 +2050,26 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, author =
 
 // Incremental (per-keystroke) title search for the typing search surfaces.
 // Unlike googleBooksSearch, this never falls back/retries with a different
-// query shape — it fires exactly one request per call. To work around the
+// query shape — it fires at most one request per call. To work around the
 // Google Books API not prefix-matching, the word still being typed is
 // dropped from the request and instead used as a local substring filter
 // against the results the leading words already return.
+//
+// Two perf optimizations on top of that, since this fires far more often
+// than any other search in the app:
+// - `fields=` restricts the response to only what these results render
+//   (title/subtitle/authors/thumb) — cuts payload size substantially, since
+//   the fields it drops (description in particular) can be large and are
+//   never shown here (unlike googleBooksSearch, which fetchWishlistDescription
+//   relies on for `description` — left untouched).
+// - A tiny one-entry cache keyed by the exact string sent to the API
+//   (`sendWords`). Once you're past the first couple of words, sendWords
+//   often stops changing for several keystrokes in a row (only the final,
+//   still-typing word grows, and that part is always filtered locally) —
+//   so those keystrokes can reuse the last response instead of re-hitting
+//   the network.
+let _gbIncrementalCache = { key: null, items: null };
+
 async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4000 } = {}) {
   if (!navigator.onLine) return null;
   const cleaned = normalizeBookQuery(query);
@@ -2065,19 +2081,25 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
     const leading = words.slice(0, -1).join(' ');
     if (leading.length >= 3) sendWords = leading;
   }
-  const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(`intitle:${sendWords}`)}&printType=books&maxResults=30${await gbApiKeyParam()}`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
   let items;
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) return null;
-    const data = await res.json();
-    items = _mapGoogleBooksItems(data);
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
+  if (_gbIncrementalCache.key === sendWords) {
+    items = _gbIncrementalCache.items;
+  } else {
+    const fields = encodeURIComponent('items(volumeInfo(title,subtitle,authors,imageLinks))');
+    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(`intitle:${sendWords}`)}&printType=books&maxResults=30&fields=${fields}${await gbApiKeyParam()}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) return null;
+      const data = await res.json();
+      items = _mapGoogleBooksItems(data);
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+    _gbIncrementalCache = { key: sendWords, items };
   }
   let results = items.filter(r => normalizeBookQuery(r.fullTitle).toLowerCase().includes(q));
   results = _dedupeBookResults(results);
