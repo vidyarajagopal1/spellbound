@@ -4775,13 +4775,23 @@ function welcomeUploadGoodreadsFile() {
 const QUEST_STAGE_COUNT = 6; // stage 0 = intro, 1–6 = stages, 7 = Find Your Next Read
 let _questState = null;
 
+// Stage 0 (the intro screen) hasn't been built yet — that's build-order step
+// 6, along with the real "no books" trigger. Until then, every run starts at
+// Stage 1 so testing isn't blocked by an unbuilt placeholder with no lit dot.
 function _newQuestState() {
-  return { stage: 0, pileIds: [] };
+  return { stage: 1, pileIds: [], rereadIds: [], readingIds: [], queuedIds: [] };
 }
 
 async function openQuest() {
   _questState = await dbGetMeta('quest_state');
   if (!_questState) _questState = _newQuestState();
+  // Defensive fallback for quest state saved before these tracking arrays existed.
+  _questState.rereadIds  = _questState.rereadIds  || [];
+  _questState.readingIds = _questState.readingIds || [];
+  _questState.queuedIds  = _questState.queuedIds  || [];
+  // Backfill for quest_state persisted before Stage 0 was skipped — jump
+  // straight to Stage 1 rather than showing the unbuilt intro placeholder.
+  if (_questState.stage === 0) { _questState.stage = 1; await _saveQuestState(); }
   document.getElementById('quest-overlay').classList.remove('hidden');
   renderQuestStage();
 }
@@ -4810,9 +4820,14 @@ async function questAddBookToPile(bookId) {
 
 async function questRemoveFromPile(bookId) {
   if (!_questState) return;
-  _questState.pileIds = _questState.pileIds.filter(id => id !== bookId);
+  _questState.pileIds   = _questState.pileIds.filter(id => id !== bookId);
+  _questState.rereadIds  = (_questState.rereadIds  || []).filter(id => id !== bookId);
+  _questState.readingIds = (_questState.readingIds || []).filter(id => id !== bookId);
+  _questState.queuedIds  = (_questState.queuedIds  || []).filter(id => id !== bookId);
   await _saveQuestState();
-  renderQuestPile();
+  if (_questState.stage === 1)                  _questUpdateStage1UI();
+  else if ([3, 4, 5].includes(_questState.stage)) _questUpdateMultiStageUI(_questState.stage);
+  else                                             renderQuestPile();
 }
 
 function renderQuestStage() {
@@ -4842,8 +4857,15 @@ function renderQuestStage() {
         }).join('');
   }
 
+  // The "N added" counter beside the pile only applies to Stages 3–5.
+  const countEl = document.getElementById('quest-added-count');
+  if (countEl && ![3, 4, 5].includes(stage)) countEl.textContent = '';
+
   if (stage === 1) { _renderQuestStage1(body); renderQuestPile(); return; }
   if (stage === 2) { _renderQuestStage2(body); renderQuestPile(); return; }
+  if (stage === 3) { _renderQuestStage3(body); renderQuestPile(); return; }
+  if (stage === 4) { _renderQuestStage4(body); renderQuestPile(); return; }
+  if (stage === 5) { _renderQuestStage5(body); renderQuestPile(); return; }
 
   // Placeholder body so the shell can be exercised end to end before any
   // real stage content exists.
@@ -4892,7 +4914,8 @@ function _questStage1GridBooks() {
 // A single selectable tile — reuses the exact spine markup/classes from the
 // Books tab pile (same shape, gold border treatment, title/author layout)
 // so the grid reads as books on a shelf rather than as generic buttons.
-function _questSpineOptionHtml(b, i, total, isSelected) {
+// `onClickAttr` is the raw onclick handler call (e.g. "questStage1SelectImported(5)").
+function _questSpineOptionHtml(b, i, total, isSelected, onClickAttr) {
   const color  = getCoverColor(b.category);
   const zIdx   = total - i;
   const authorHtml = b.author
@@ -4901,7 +4924,7 @@ function _questSpineOptionHtml(b, i, total, isSelected) {
   const checkHtml = isSelected ? '<i class="ph-bold ph-check-circle quest-spine-check"></i>' : '';
   return `
     <div class="book-spine quest-spine-option ${isSelected ? 'selected' : ''}" data-book-id="${b.id}"
-         style="--spine-bg:${color};z-index:${zIdx}" onclick="questStage1SelectImported(${b.id})">
+         style="--spine-bg:${color};z-index:${zIdx}" onclick="${onClickAttr}">
       <div class="spine-body">
         <span class="spine-title">${escapeHtml(b.title)}</span>
         ${authorHtml}
@@ -4926,7 +4949,7 @@ function _renderQuestStage1(body) {
       <div class="quest-group">
         <p class="quest-note-sub">The most recent from your import.</p>
         <div class="quest-spine-list" id="quest-stage1-grid">
-          ${gridBooks.map((b, i) => _questSpineOptionHtml(b, i, gridBooks.length, chosen && chosen.id === b.id)).join('')}
+          ${gridBooks.map((b, i) => _questSpineOptionHtml(b, i, gridBooks.length, chosen && chosen.id === b.id, `questStage1SelectImported(${b.id})`)).join('')}
         </div>
       </div>
       <div class="quest-group">
@@ -4954,7 +4977,7 @@ function _questRenderStage1Grid() {
   const grid = document.getElementById('quest-stage1-grid');
   if (!grid) return; // non-importer path has no grid to update
   const { gridBooks, chosen } = _questStage1GridBooks();
-  grid.innerHTML = gridBooks.map((b, i) => _questSpineOptionHtml(b, i, gridBooks.length, chosen && chosen.id === b.id)).join('');
+  grid.innerHTML = gridBooks.map((b, i) => _questSpineOptionHtml(b, i, gridBooks.length, chosen && chosen.id === b.id, `questStage1SelectImported(${b.id})`)).join('');
 }
 
 function _questUpdateStage1UI() {
@@ -5062,6 +5085,200 @@ async function questStage2SelectRating(ratingKey) {
     await dbPut('books', book);
   }
   questGoToStage(3);
+}
+
+// ── Stages 3–5 — shared search-and-add pattern ─────────────────────────────
+// Copy: docs/quest-copy.md Stages 3 (re-reads), 4 (currently reading), 5
+// (queued). All three reuse one search-and-add component (built once here);
+// Stage 3 additionally layers an importer grid of the user's own library on
+// top of it. Every stage here advances regardless of count — per the
+// spec's "Skips" rule — the advance button's label just communicates
+// whether anything was added ("Maybe later" vs "Continue").
+
+const QUEST_MULTI_STAGE_CONFIG = {
+  3: { trackKey: 'rereadIds',  statusForNew: 'Completed',  nextStage: 4 },
+  4: { trackKey: 'readingIds', statusForNew: 'Reading',    nextStage: 5 },
+  5: { trackKey: 'queuedIds',  statusForNew: 'Queued Up',  nextStage: 6 },
+};
+
+// Stage 3's importer signal is broader than Stage 1's: any Goodreads-sourced
+// book at all (not just recent completions), since the re-read grid should
+// draw on the whole imported library, per the spec's "Pick from your
+// library" copy.
+function _questHasImportedLibrary() {
+  return books.some(b => b.source === 'goodreads');
+}
+
+// Re-read candidates: any completed book, since you can only re-read what
+// you've already finished.
+function _questRereadCandidates() {
+  return books.filter(b => b.status === 'Completed');
+}
+
+function _questStage3GridHtml(candidates, filterValue) {
+  const q = (filterValue || '').trim().toLowerCase();
+  const filtered = q
+    ? candidates.filter(b => (b.title || '').toLowerCase().includes(q) || (b.author || '').toLowerCase().includes(q))
+    : candidates;
+  if (filtered.length === 0) return '<p class="quest-note-sub">No matches in your library.</p>';
+  return filtered.map((b, i) => _questSpineOptionHtml(b, i, filtered.length, _questState.rereadIds.includes(b.id), `questStage3ToggleLibraryBook(${b.id})`)).join('');
+}
+
+function _questRenderStage3Grid(filterValue) {
+  const grid = document.getElementById('quest-stage3-grid');
+  if (!grid) return; // non-importer path has no grid to update
+  grid.innerHTML = _questStage3GridHtml(_questRereadCandidates(), filterValue);
+}
+
+async function questStage3ToggleLibraryBook(bookId) {
+  const selected = _questState.rereadIds.includes(bookId);
+  if (selected) {
+    await questRemoveFromPile(bookId); // also strips rereadIds and refreshes this stage's UI
+  } else {
+    _questState.rereadIds.push(bookId);
+    await questAddBookToPile(bookId);  // adds to the session pile, saves, renders the shelf
+    _questUpdateMultiStageUI(3);
+  }
+}
+
+function _questMultiSearchBlockHtml(stageNum) {
+  return `
+    <div class="quest-search">
+      <input type="search" class="quest-search-input" id="quest-search-input-${stageNum}" placeholder="Search for books" oninput="questMultiSearchInput(this.value, ${stageNum})" autocomplete="off">
+      <div class="quest-search-results" id="quest-search-results-${stageNum}"></div>
+    </div>`;
+}
+
+// Shared by Stages 3, 4 and 5. For Stage 3 this also live-filters the
+// importer grid (local, instant) in addition to the debounced external
+// Google Books lookup that every stage here uses to add genuinely new books.
+function questMultiSearchInput(value, stageNum) {
+  if (stageNum === 3) _questRenderStage3Grid(value);
+
+  clearTimeout(_questSearchTimer);
+  const resultsEl = document.getElementById(`quest-search-results-${stageNum}`);
+  if (!resultsEl) return;
+  const q = value.trim();
+  if (q.length < 2) { resultsEl.innerHTML = ''; return; }
+  resultsEl.innerHTML = '<p class="quest-search-loading">Searching…</p>';
+  _questSearchTimer = setTimeout(async () => {
+    const items = await googleBooksSearch(q, { maxResults: 8, field: 'intitle' });
+    if (!items)              { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
+    if (items.length === 0) { resultsEl.innerHTML = '<p class="quest-search-loading">No results found.</p>'; return; }
+    resultsEl._items = items;
+    resultsEl.innerHTML = items.map((item, i) => `
+      <div class="quest-search-result" onclick="questMultiSearchSelect(${stageNum}, ${i})">
+        ${item.thumb ? `<img class="quest-search-result-thumb" src="${item.thumb}" alt="">` : '<div class="quest-search-result-thumb quest-search-result-thumb-placeholder"></div>'}
+        <div class="quest-search-result-info">
+          <div class="quest-search-result-title">${escapeHtml(item.fullTitle || item.title)}</div>
+          ${item.author_name?.length ? `<div class="quest-search-result-author">${escapeHtml(item.author_name.join(', '))}</div>` : ''}
+        </div>
+      </div>`).join('');
+  }, 350);
+}
+
+async function questMultiSearchSelect(stageNum, index) {
+  const resultsEl = document.getElementById(`quest-search-results-${stageNum}`);
+  const item = resultsEl?._items?.[index];
+  if (!item) return;
+  const cfg = QUEST_MULTI_STAGE_CONFIG[stageNum];
+  try {
+    const book = await _questCreateBookFromSearchResult(item, cfg.statusForNew);
+    if (!_questState[cfg.trackKey].includes(book.id)) _questState[cfg.trackKey].push(book.id);
+    await questAddBookToPile(book.id);
+    resultsEl.innerHTML = '';
+    const input = document.getElementById(`quest-search-input-${stageNum}`);
+    if (input) { input.value = ''; input.focus(); }
+    _questUpdateMultiStageUI(stageNum);
+  } catch (err) {
+    console.error('questMultiSearchSelect failed', err);
+    resultsEl.innerHTML = '<p class="quest-search-loading">Something went wrong adding that book. Check the console for details.</p>';
+  }
+}
+
+// Refreshes the "N added" counter, the advance button's label, and (Stage 3
+// only) the grid's selection state — after any add/remove on Stages 3–5.
+function _questUpdateMultiStageUI(stageNum) {
+  const cfg = QUEST_MULTI_STAGE_CONFIG[stageNum];
+  if (!cfg) return;
+  const count   = _questState[cfg.trackKey].length;
+  const countEl = document.getElementById('quest-added-count');
+  if (countEl) countEl.textContent = count > 0 ? `${count} added` : '';
+  const btn = document.getElementById(`quest-stage${stageNum}-advance`);
+  if (btn) btn.textContent = count > 0 ? 'Continue' : 'Maybe later';
+  if (stageNum === 3) _questRenderStage3Grid(document.getElementById('quest-search-input-3')?.value || '');
+  renderQuestPile();
+}
+
+function _renderQuestStage3(body) {
+  const isImporter = _questHasImportedLibrary();
+  const candidates = isImporter ? _questRereadCandidates() : [];
+  const showGrid   = candidates.length > 0;
+
+  const gridSectionHtml = showGrid ? `
+      <div class="quest-group">
+        <p class="quest-note-sub">Pick from your library, or add a new one.</p>
+        <div class="quest-spine-list" id="quest-stage3-grid">
+          ${_questStage3GridHtml(candidates, '')}
+        </div>
+      </div>
+      <div class="quest-group">
+        <p class="quest-note-sub">Not here? Search for it.</p>
+        ${_questMultiSearchBlockHtml(3)}
+      </div>` : `
+      <div class="quest-group">
+        ${_questMultiSearchBlockHtml(3)}
+      </div>`;
+
+  body.innerHTML = `
+    <div class="build-step quest-stage">
+      <div class="quest-group">
+        <p class="build-prompt">Which books would you re-read without hesitating?</p>
+        <p class="build-prompt-small">Five or more, ideally. It helps us get your taste right.</p>
+      </div>
+      ${gridSectionHtml}
+      <div class="build-nav">
+        <button class="build-next-btn" id="quest-stage3-advance" onclick="questGoToStage(4)">Maybe later</button>
+      </div>
+    </div>`;
+
+  _questUpdateMultiStageUI(3);
+}
+
+function _renderQuestStage4(body) {
+  body.innerHTML = `
+    <div class="build-step quest-stage">
+      <div class="quest-group">
+        <p class="build-prompt">Reading anything right now?</p>
+        <p class="build-prompt-small">Physical, audio, or e-book. Whatever you're reading gets its own Spotlight on your Home page.</p>
+      </div>
+      <div class="quest-group">
+        ${_questMultiSearchBlockHtml(4)}
+      </div>
+      <div class="build-nav">
+        <button class="build-next-btn" id="quest-stage4-advance" onclick="questGoToStage(5)">Maybe later</button>
+      </div>
+    </div>`;
+
+  _questUpdateMultiStageUI(4);
+}
+
+function _renderQuestStage5(body) {
+  body.innerHTML = `
+    <div class="build-step quest-stage">
+      <div class="quest-group">
+        <p class="build-prompt">Any books you've been eyeing?</p>
+        <p class="build-prompt-small">So you always have a glimpse of your TBR, waiting for you at Home.</p>
+      </div>
+      <div class="quest-group">
+        ${_questMultiSearchBlockHtml(5)}
+      </div>
+      <div class="build-nav">
+        <button class="build-next-btn" id="quest-stage5-advance" onclick="questGoToStage(6)">Maybe later</button>
+      </div>
+    </div>`;
+
+  _questUpdateMultiStageUI(5);
 }
 
 // Shared pile component — a filtered view of the library showing only books

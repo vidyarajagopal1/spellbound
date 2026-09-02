@@ -872,6 +872,16 @@ main { min-height: 100%; }
   color: var(--text-muted);
   font-size: 0.82rem;
 }
+/* "N added" counter beside the pile shelf — only populated on Stages 3–5. */
+.quest-added-count {
+  width: calc(100% - 2rem);
+  max-width: 600px;
+  margin: 0.4rem auto 0;
+  text-align: right;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  min-height: 1em;
+}
 /* Vertically centers stage content so it fills the available screen instead
    of clustering at the top with dead space below the Continue button.
    Scoped to #quest-body only (not the shared .build-body base class), so
