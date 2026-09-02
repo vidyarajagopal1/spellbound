@@ -2989,12 +2989,14 @@ let _fnrQuestMode = false; // true when opened via the quest's Find Your Next Re
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
-// `fromQuest` is set by the quest's Stage 7 handoff (questHandoffToFNR). It
-// switches on quest-only copy/UI: the "Fill in only the parts you feel
-// strongly about." reassurance note, the quest-specific failure message, and
-// the "Go to Home" / "See my shelf" exit buttons after a recommendation —
-// see docs/quest-copy.md "Find Your Next Read". Normal Wishlist-tab entry
-// (the only other caller) omits the argument and behaves exactly as before.
+// `fromQuest` is set by the quest's Stage 7 handoff (questHandoffToFNR), from
+// both the five-or-more and under-five gate paths. It switches on quest-only
+// UI: the "Fill in only the parts you feel strongly about" intermission
+// screen (#fnr-quest-intermission, shown before the form itself — never
+// inside it), the quest-specific failure message, and the "Go to Home" /
+// "See my shelf" exit buttons after a recommendation — see
+// docs/quest-copy.md "Find Your Next Read". Normal Wishlist-tab entry (the
+// only other caller) omits the argument and goes straight to the form.
 function openFindNextRead(fromQuest = false) {
   _fnrQuestMode = fromQuest;
   _fnrFormState = null;
@@ -3002,12 +3004,18 @@ function openFindNextRead(fromQuest = false) {
   _fnrRejectedSlots = new Set();
   document.getElementById('wishlist-main').style.display = 'none';
   document.getElementById('fnr-content').style.display   = 'block';
-  document.getElementById('fnr-form-section').style.display    = 'block';
+  document.getElementById('fnr-quest-intermission').style.display = fromQuest ? 'flex' : 'none';
+  document.getElementById('fnr-form-section').style.display    = fromQuest ? 'none' : 'block';
   document.getElementById('fnr-results-section').style.display = 'none';
   document.getElementById('fnr-edit-prefs-btn').classList.add('hidden');
-  document.getElementById('fnr-quest-note').classList.toggle('hidden', !_fnrQuestMode);
   document.getElementById('fnr-quest-exit').classList.add('hidden');
   _fnrRenderPills();
+}
+
+// Advances from the quest intermission screen into the actual FNR form.
+function fnrQuestContinueToForm() {
+  document.getElementById('fnr-quest-intermission').style.display = 'none';
+  document.getElementById('fnr-form-section').style.display       = 'block';
 }
 
 function fnrBack() {
@@ -5636,6 +5644,14 @@ function _questFNRPileBooks() {
   return _questState.pileIds.map(id => books.find(b => b.id === id)).filter(Boolean);
 }
 
+// Spells out small counts ("You've got one" rather than "You've got 1") for
+// the thin-pile gate copy — the gate only ever fires under five books, but
+// this covers zero through ten for safety.
+function _questSpellNumber(n) {
+  const words = ['zero','one','two','three','four','five','six','seven','eight','nine','ten'];
+  return (n >= 0 && n < words.length) ? words[n] : String(n);
+}
+
 function _renderQuestStage7(body) {
   const count      = _questFNRPileBooks().length;
   const fiveOrMore = count >= 5;
@@ -5644,10 +5660,10 @@ function _renderQuestStage7(body) {
     <div class="build-step quest-stage">
       <div class="quest-group">
         <div class="quest-note-card">
-          <p class="build-prompt">That's your shelf, and it'll keep growing.</p>
-          <p class="build-prompt-small" id="quest-fnr-subcopy">${fiveOrMore
+          <p class="quest-intro-heading">That's your shelf, and it'll keep growing.</p>
+          <p class="quest-intro-sub" id="quest-fnr-subcopy">${fiveOrMore
             ? "Now for the part we promised. Let's find you something worth reading next."
-            : `Find Your Next Read works best with five to eight books in your pile. You've got ${count}.`}</p>
+            : `Find Your Next Read works best with five to eight books in your pile. You've got ${_questSpellNumber(count)}.`}</p>
         </div>
       </div>
       <div class="quest-group" id="quest-fnr-add-more" style="display:none">
@@ -5656,8 +5672,8 @@ function _renderQuestStage7(body) {
       <div class="build-nav" id="quest-fnr-gate-actions">
         ${fiveOrMore
           ? `<button class="build-next-btn" onclick="questHandoffToFNR()">Continue</button>`
-          : `<button class="build-skip-btn" onclick="questFNRShowAddMore()">Add a few more</button>
-             <button class="build-next-btn" onclick="questHandoffToFNR()">Go ahead anyway</button>`}
+          : `<button class="build-skip-btn" onclick="questHandoffToFNR()">Go ahead anyway</button>
+             <button class="build-next-btn" onclick="questFNRShowAddMore()">Add a few more</button>`}
       </div>
     </div>`;
 }
@@ -5720,7 +5736,7 @@ async function questFNRSearchSelect(index) {
     if (subcopyEl) {
       subcopyEl.textContent = count >= 5
         ? "Now for the part we promised. Let's find you something worth reading next."
-        : `Find Your Next Read works best with five to eight books in your pile. You've got ${count}.`;
+        : `Find Your Next Read works best with five to eight books in your pile. You've got ${_questSpellNumber(count)}.`;
     }
     const actionsEl = document.getElementById('quest-fnr-gate-actions');
     if (actionsEl && count >= 5) {
@@ -5735,10 +5751,11 @@ async function questFNRSearchSelect(index) {
 // Hands off from the quest overlay to the existing Find Your Next Read
 // feature (Wishlist tab), rather than re-implementing its form inside the
 // quest — "Then the FNR form opens" per spec. openFindNextRead(true) flags
-// quest mode so the form shows its reassurance copy, the failure state
-// shows the quest-specific message, and the results screen gets the two
-// quest exit buttons (see openFindNextRead / submitFindNextRead / the
-// #fnr-quest-note / #fnr-quest-exit elements in index.html).
+// quest mode so it shows the "Fill in only the parts..." intermission
+// screen first, the failure state shows the quest-specific message, and the
+// results screen gets the two quest exit buttons (see openFindNextRead /
+// submitFindNextRead / the #fnr-quest-intermission / #fnr-quest-exit
+// elements in index.html).
 function questHandoffToFNR() {
   closeQuest();
   showView('wishlist');
