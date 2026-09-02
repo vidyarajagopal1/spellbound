@@ -4964,7 +4964,7 @@ function _renderQuestStage0(body) {
   body.innerHTML = `
     <div class="build-step quest-stage">
       <div class="quest-group">
-        <p class="quest-intro-heading">A shelf of your own, waiting to be filled.</p>
+        <p class="quest-headline"><span class="quest-headline-main">A shelf of your own,</span><span class="quest-headline-accent">waiting to be filled.</span></p>
         <p class="quest-intro-sub">Come on a quest. We'll start with a few books you know, and find your next great read along the way.</p>
       </div>
       <div class="quest-group">
@@ -5662,7 +5662,7 @@ function _renderQuestStage7(body) {
   body.innerHTML = `
     <div class="build-step quest-stage">
       <div class="quest-group">
-        <p class="quest-intro-heading">That's your shelf, and it'll keep growing.</p>
+        <p class="quest-headline"><span class="quest-headline-main">That's your shelf,</span><span class="quest-headline-accent">and it'll keep growing.</span></p>
         <p class="quest-intro-sub" id="quest-fnr-subcopy">${fiveOrMore
           ? "Now for the part we promised. Let's find you something worth reading next."
           : `Find Your Next Read works best with five to eight books in your pile. You've got ${_questSpellNumber(count)}.`}</p>
@@ -5770,9 +5770,16 @@ function questHandoffToFNR() {
 // the Wishlist tab. Swaps #quest-body in place, same pattern as
 // questStage6StartCapture; the header/progress chrome from Stage 7 (no
 // dots, "Find Your Next Read" label) is already showing and stays as-is.
+// This is its own distinct pop-up moment, not another stage in the shelf-
+// building flow, so the persistent pile shelf/added-count (still showing
+// Stage 7's content otherwise) is hidden here rather than left dangling.
 function questShowFNRIntermission() {
   const body = document.getElementById('quest-body');
   if (!body) return;
+  const pileBar = document.getElementById('quest-pile-bar');
+  if (pileBar) pileBar.style.display = 'none';
+  const countEl = document.getElementById('quest-added-count');
+  if (countEl) countEl.textContent = '';
   body.innerHTML = `
     <div class="build-step quest-stage">
       <div class="quest-group">
