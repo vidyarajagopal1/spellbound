@@ -678,6 +678,7 @@ async function confirmGoodreadsImport() {
     _welcomeGrFlowActive = false;
     document.getElementById('welcome-modal').classList.add('hidden');
     showView('home');
+    openQuest(); // per quest-copy.md: Goodreads import instructions → Quest intro
   } else {
     alert(`Import complete — ${added} book${added !== 1 ? 's' : ''} added${skipped ? `, ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped` : ''}.`);
   }
@@ -4764,8 +4765,13 @@ let _welcomeGrFlowActive = false;
 function showWelcomeModal() {
   document.getElementById('welcome-modal').classList.remove('hidden');
 }
+// "Prefer to start fresh?" → Continue. Per quest-copy.md's structure
+// ("Welcome pop-up → Goodreads import instructions → Quest intro → ..."),
+// the quest follows immediately — this is the fresh-start half of that
+// handoff. The Goodreads-import half is in confirmGoodreadsImport().
 function closeWelcomeModal() {
   document.getElementById('welcome-modal').classList.add('hidden');
+  openQuest();
 }
 function welcomeImportFromGoodreads() {
   document.getElementById('welcome-screen-main').classList.add('hidden');
@@ -4790,11 +4796,9 @@ function welcomeUploadGoodreadsFile() {
 const QUEST_STAGE_COUNT = 6; // stage 0 = intro, 1–6 = stages, 7 = Find Your Next Read
 let _questState = null;
 
-// Stage 0 (the intro screen) hasn't been built yet — that's build-order step
-// 6, along with the real "no books" trigger. Until then, every run starts at
-// Stage 1 so testing isn't blocked by an unbuilt placeholder with no lit dot.
+// Stage 0 is the intro screen (see _renderQuestStage0 / QUEST_INTRO_SPINES).
 function _newQuestState() {
-  return { stage: 1, pileIds: [], rereadIds: [], readingIds: [], queuedIds: [], highlightIds: [] };
+  return { stage: 0, pileIds: [], rereadIds: [], readingIds: [], queuedIds: [], highlightIds: [] };
 }
 
 async function openQuest() {
@@ -4805,9 +4809,6 @@ async function openQuest() {
   _questState.readingIds   = _questState.readingIds   || [];
   _questState.queuedIds    = _questState.queuedIds    || [];
   _questState.highlightIds = _questState.highlightIds || [];
-  // Backfill for quest_state persisted before Stage 0 was skipped — jump
-  // straight to Stage 1 rather than showing the unbuilt intro placeholder.
-  if (_questState.stage === 0) { _questState.stage = 1; await _saveQuestState(); }
   document.getElementById('quest-overlay').classList.remove('hidden');
   renderQuestStage();
 }
@@ -4877,6 +4878,13 @@ function renderQuestStage() {
   const countEl = document.getElementById('quest-added-count');
   if (countEl && ![3, 4, 5].includes(stage)) countEl.textContent = '';
 
+  // The persistent pile shelf shows the real session pile (always empty on
+  // the intro, since nothing's been added yet) — hidden on Stage 0 so it
+  // doesn't compete with the intro's own pseudo shelf of dummy spines.
+  const pileBar = document.getElementById('quest-pile-bar');
+  if (pileBar) pileBar.style.display = stage === 0 ? 'none' : '';
+
+  if (stage === 0) { _renderQuestStage0(body); return; }
   if (stage === 1) { _renderQuestStage1(body); renderQuestPile(); return; }
   if (stage === 2) { _renderQuestStage2(body); renderQuestPile(); return; }
   if (stage === 3) { _renderQuestStage3(body); renderQuestPile(); return; }
@@ -4897,6 +4905,53 @@ function renderQuestStage() {
     </div>`;
 
   renderQuestPile();
+}
+
+// ── Stage 0 — Intro ─────────────────────────────────────────────────────────
+// Copy: docs/quest-copy.md "Intro". Titles for the pseudo shelf are chosen
+// by Vidya (real, widely known, spread across the five categories) — not
+// generated, per the spec's explicit instruction. Purely decorative: no
+// selection state, no click handlers, unrelated to the real session pile.
+const QUEST_INTRO_SPINES = [
+  { title: 'Rebecca',                 author: 'Daphne du Maurier',    category: 'Escape' },
+  { title: 'Sapiens',                 author: 'Yuval Noah Harari',    category: 'Understand' },
+  { title: 'Chip War',                author: 'Chris Miller',         category: 'Understand' },
+  { title: 'The Covenant of Water',   author: 'Abraham Verghese',     category: 'Reflect' },
+  { title: 'A Little Life',           author: 'Hanya Yanagihara',     category: 'Reflect' },
+  { title: "The Artist's Way",        author: 'Julia Cameron',        category: 'Evolve' },
+  { title: '1984',                    author: 'George Orwell',        category: 'Question' },
+];
+
+function _questIntroShelfHtml() {
+  const n = QUEST_INTRO_SPINES.length;
+  return QUEST_INTRO_SPINES.map((b, i) => {
+    const color = getCoverColor(b.category);
+    return `
+      <div class="book-spine" style="--spine-bg:${color};z-index:${n - i};cursor:default">
+        <div class="spine-body">
+          <span class="spine-title">${escapeHtml(b.title)}</span>
+          <span class="spine-sep">·</span><span class="spine-author">${escapeHtml(b.author)}</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function _renderQuestStage0(body) {
+  body.innerHTML = `
+    <div class="build-step quest-stage">
+      <div class="quest-group">
+        <p class="build-prompt">A shelf of your own, waiting to be filled.</p>
+        <p class="build-prompt-small">Come on a quest. We'll start with a few books you know, and find your next great read along the way.</p>
+      </div>
+      <div class="quest-group">
+        <div class="quest-spine-list">
+          ${_questIntroShelfHtml()}
+        </div>
+      </div>
+      <div class="build-nav">
+        <button class="build-next-btn" onclick="questGoToStage(1)">Begin the quest →</button>
+      </div>
+    </div>`;
 }
 
 // ── Stage 1 — Last book ─────────────────────────────────────────────────────
