@@ -115,6 +115,11 @@ main { min-height: 100%; }
 .view.hidden { display: none; }
 .hidden      { display: none !important; }
 
+/* Shared dimming state for any typing-search results container while a new
+   request is in flight but previous results are still on screen (keeps the
+   list visible instead of blanking it every keystroke). */
+.search-loading { opacity: 0.5; transition: opacity 0.15s ease; }
+
 /* ─── HOME ──────────────────────────────────────────────────────────────────── */
 .home-hero {
   display: flex;
@@ -1127,6 +1132,7 @@ main { min-height: 100%; }
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-height: 62px;
 }
 .quest-search-result {
   display: flex;
@@ -2908,6 +2914,7 @@ main { min-height: 100%; }
   overflow: hidden;
   max-height: 220px;
   overflow-y: auto;
+  min-height: 44px;
 }
 .fnr-suggestions.hidden { display: none; }
 .fnr-suggestion-item {
@@ -3161,6 +3168,7 @@ main { min-height: 100%; }
   flex-direction: column;
   gap: 8px;
   margin-bottom: 8px;
+  min-height: 80px;
 }
 .book-suggestions.hidden { display: none; }
 .book-lookup-loading {

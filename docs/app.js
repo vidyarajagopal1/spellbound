@@ -1210,10 +1210,15 @@ function debounceBookLookup(form) {
   const sugEl   = document.getElementById(_sugElId(form));
   if (!titleEl || !sugEl) return;
   const title = titleEl.value.trim();
-  if (title.length < 2) { sugEl.classList.add('hidden'); sugEl.innerHTML = ''; return; }
+  if (title.length < 2) { sugEl.classList.add('hidden'); sugEl.classList.remove('search-loading'); sugEl.innerHTML = ''; delete sugEl.dataset.query; return; }
   sugEl.classList.remove('hidden');
-  sugEl.innerHTML = '<p class="book-lookup-loading">Looking up…</p>';
-  _lookupTimer = setTimeout(() => fetchBookSuggestions(title, form), 400);
+  sugEl.classList.remove('search-loading');
+  if (sugEl.querySelector('.book-suggestion-card')) {
+    sugEl.classList.add('search-loading');
+  } else {
+    sugEl.innerHTML = '<p class="book-lookup-loading">Looking up…</p>';
+  }
+  _lookupTimer = setTimeout(() => fetchBookSuggestions(title, form), 500);
 }
 
 function triggerEditBookLookup() {
@@ -1230,7 +1235,10 @@ async function fetchBookSuggestions(title, form) {
   if (!sugEl) return;
   const authorEl = document.getElementById(_authorElId(form));
   const author = authorEl ? authorEl.value.trim() : '';
+  sugEl.dataset.query = title;
   const items = await googleBooksIncrementalSearch(title, { maxResults: 10, author: author || null });
+  if (sugEl.dataset.query !== title) return; // a newer keystroke already superseded this request
+  sugEl.classList.remove('search-loading');
   if (items === null) {
     sugEl.innerHTML = '<p class="book-lookup-loading">Lookup failed.</p>';
     return;
@@ -3239,23 +3247,43 @@ function fnrDebouncedBookSearch() {
   clearTimeout(_fnrSearchTimer);
   const val = document.getElementById('fnr-book-search').value.trim();
   document.getElementById('fnr-book-value').value = '';
-  if (val.length < 2) { document.getElementById('fnr-book-suggestions').classList.add('hidden'); return; }
-  _fnrSearchTimer = setTimeout(() => _fnrFetchBooks(val), 400);
+  if (val.length < 2) {
+    const sugEl = document.getElementById('fnr-book-suggestions');
+    sugEl.classList.add('hidden');
+    sugEl.classList.remove('search-loading');
+    delete sugEl.dataset.query;
+    return;
+  }
+  _fnrSearchTimer = setTimeout(() => _fnrFetchBooks(val), 500);
 }
 
 function fnrDebouncedAuthorSearch() {
   clearTimeout(_fnrSearchTimer);
   const val = document.getElementById('fnr-author-search').value.trim();
   document.getElementById('fnr-author-value').value = '';
-  if (val.length < 2) { document.getElementById('fnr-author-suggestions').classList.add('hidden'); return; }
-  _fnrSearchTimer = setTimeout(() => _fnrFetchAuthors(val), 400);
+  if (val.length < 2) {
+    const sugEl = document.getElementById('fnr-author-suggestions');
+    sugEl.classList.add('hidden');
+    sugEl.classList.remove('search-loading');
+    delete sugEl.dataset.query;
+    return;
+  }
+  _fnrSearchTimer = setTimeout(() => _fnrFetchAuthors(val), 500);
 }
 
 async function _fnrFetchBooks(query) {
   const sugEl = document.getElementById('fnr-book-suggestions');
   sugEl.classList.remove('hidden');
-  sugEl.innerHTML = '<p class="fnr-lookup-loading">Searching…</p>';
+  if (sugEl.querySelector('.fnr-suggestion-item')) {
+    sugEl.classList.add('search-loading');
+  } else {
+    sugEl.classList.remove('search-loading');
+    sugEl.innerHTML = '<p class="fnr-lookup-loading">Searching…</p>';
+  }
+  sugEl.dataset.query = query;
   const results = await googleBooksIncrementalSearch(query, { maxResults: 10 });
+  if (sugEl.dataset.query !== query) return; // a newer keystroke already superseded this request
+  sugEl.classList.remove('search-loading');
   if (results === null) { sugEl.innerHTML = '<p class="fnr-lookup-loading">Lookup failed.</p>'; return; }
   const items = results.map(item => ({
     title:     item.title || '',
@@ -3273,8 +3301,16 @@ async function _fnrFetchBooks(query) {
 async function _fnrFetchAuthors(query) {
   const sugEl = document.getElementById('fnr-author-suggestions');
   sugEl.classList.remove('hidden');
-  sugEl.innerHTML = '<p class="fnr-lookup-loading">Searching…</p>';
+  if (sugEl.querySelector('.fnr-suggestion-item')) {
+    sugEl.classList.add('search-loading');
+  } else {
+    sugEl.classList.remove('search-loading');
+    sugEl.innerHTML = '<p class="fnr-lookup-loading">Searching…</p>';
+  }
+  sugEl.dataset.query = query;
   const results = await googleBooksSearch(query, { maxResults: 8, field: 'inauthor' });
+  if (sugEl.dataset.query !== query) return; // a newer keystroke already superseded this request
+  sugEl.classList.remove('search-loading');
   if (results === null) { sugEl.innerHTML = '<p class="fnr-lookup-loading">Lookup failed.</p>'; return; }
   const nq = normalizeBookQuery(query).toLowerCase();
   const authors = [...new Set(
@@ -5259,10 +5295,18 @@ function questStage1SearchInput(value) {
   const resultsEl = document.getElementById('quest-search-results-1');
   if (!resultsEl) return;
   const q = value.trim();
-  if (q.length < 2) { resultsEl.innerHTML = ''; return; }
-  resultsEl.innerHTML = '<p class="quest-search-loading">Searching…</p>';
+  if (q.length < 2) { resultsEl.innerHTML = ''; resultsEl.classList.remove('search-loading'); delete resultsEl.dataset.query; return; }
+  if (resultsEl.querySelector('.quest-search-result')) {
+    resultsEl.classList.add('search-loading');
+  } else {
+    resultsEl.classList.remove('search-loading');
+    resultsEl.innerHTML = '<p class="quest-search-loading">Searching…</p>';
+  }
   _questSearchTimer = setTimeout(async () => {
+    resultsEl.dataset.query = q;
     const items = await googleBooksIncrementalSearch(q, { maxResults: 8 });
+    if (resultsEl.dataset.query !== q) return; // a newer keystroke already superseded this request
+    resultsEl.classList.remove('search-loading');
     if (!items)          { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
     if (items.length === 0) { resultsEl.innerHTML = '<p class="quest-search-loading">No results found.</p>'; return; }
     resultsEl._items = items;
@@ -5274,7 +5318,7 @@ function questStage1SearchInput(value) {
           ${item.author_name?.length ? `<div class="quest-search-result-author">${escapeHtml(item.author_name.join(', '))}</div>` : ''}
         </div>
       </div>`).join('');
-  }, 350);
+  }, 500);
 }
 
 async function questStage1SearchSelect(index) {
@@ -5398,10 +5442,18 @@ function questMultiSearchInput(value, stageNum) {
   const resultsEl = document.getElementById(`quest-search-results-${stageNum}`);
   if (!resultsEl) return;
   const q = value.trim();
-  if (q.length < 2) { resultsEl.innerHTML = ''; return; }
-  resultsEl.innerHTML = '<p class="quest-search-loading">Searching…</p>';
+  if (q.length < 2) { resultsEl.innerHTML = ''; resultsEl.classList.remove('search-loading'); delete resultsEl.dataset.query; return; }
+  if (resultsEl.querySelector('.quest-search-result')) {
+    resultsEl.classList.add('search-loading');
+  } else {
+    resultsEl.classList.remove('search-loading');
+    resultsEl.innerHTML = '<p class="quest-search-loading">Searching…</p>';
+  }
   _questSearchTimer = setTimeout(async () => {
+    resultsEl.dataset.query = q;
     const items = await googleBooksIncrementalSearch(q, { maxResults: 8 });
+    if (resultsEl.dataset.query !== q) return; // a newer keystroke already superseded this request
+    resultsEl.classList.remove('search-loading');
     if (!items)              { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
     if (items.length === 0) { resultsEl.innerHTML = '<p class="quest-search-loading">No results found.</p>'; return; }
     resultsEl._items = items;
@@ -5413,7 +5465,7 @@ function questMultiSearchInput(value, stageNum) {
           ${item.author_name?.length ? `<div class="quest-search-result-author">${escapeHtml(item.author_name.join(', '))}</div>` : ''}
         </div>
       </div>`).join('');
-  }, 350);
+  }, 500);
 }
 
 async function questMultiSearchSelect(stageNum, index) {
@@ -5824,10 +5876,18 @@ function questFNRSearchInput(value) {
   const resultsEl = document.getElementById('quest-search-results-7');
   if (!resultsEl) return;
   const q = value.trim();
-  if (q.length < 2) { resultsEl.innerHTML = ''; return; }
-  resultsEl.innerHTML = '<p class="quest-search-loading">Searching…</p>';
+  if (q.length < 2) { resultsEl.innerHTML = ''; resultsEl.classList.remove('search-loading'); delete resultsEl.dataset.query; return; }
+  if (resultsEl.querySelector('.quest-search-result')) {
+    resultsEl.classList.add('search-loading');
+  } else {
+    resultsEl.classList.remove('search-loading');
+    resultsEl.innerHTML = '<p class="quest-search-loading">Searching…</p>';
+  }
   _questSearchTimer = setTimeout(async () => {
+    resultsEl.dataset.query = q;
     const items = await googleBooksIncrementalSearch(q, { maxResults: 8 });
+    if (resultsEl.dataset.query !== q) return; // a newer keystroke already superseded this request
+    resultsEl.classList.remove('search-loading');
     if (!items)              { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
     if (items.length === 0) { resultsEl.innerHTML = '<p class="quest-search-loading">No results found.</p>'; return; }
     resultsEl._items = items;
@@ -5839,7 +5899,7 @@ function questFNRSearchInput(value) {
           ${item.author_name?.length ? `<div class="quest-search-result-author">${escapeHtml(item.author_name.join(', '))}</div>` : ''}
         </div>
       </div>`).join('');
-  }, 350);
+  }, 500);
 }
 
 async function questFNRSearchSelect(index) {
