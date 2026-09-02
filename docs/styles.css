@@ -1777,9 +1777,10 @@ main { min-height: 100%; }
   font-family: inherit;
 }
 .medium-btn.active {
-  background: var(--surface2);
+  background: rgba(232,223,200,0.18);
   color: var(--accent2);
   border-color: var(--accent2);
+  font-weight: 600;
 }
 .medium-btn:active { opacity: 0.8; }
 
