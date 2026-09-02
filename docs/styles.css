@@ -827,6 +827,34 @@ main { min-height: 100%; }
 }
 
 /* ─── QUEST OVERLAY (first-run quest shell) ────────────────────────────────── */
+/* Distinct identity from the plain Build Essay overlay it shares base
+   classes with (.build-overlay/.build-header/.build-body/.build-next-btn):
+   a warm gold glow and accent-led chrome so the quest reads as a special,
+   occasion-led experience rather than another form to fill in. Scoped by
+   #quest-overlay id throughout so Build Essay is completely unaffected. */
+#quest-overlay {
+  background:
+    radial-gradient(ellipse 100% 40% at 50% 0%, rgba(232,223,200,0.09), transparent 65%),
+    var(--bg);
+}
+#quest-overlay .build-header {
+  background: var(--surface);
+  border-bottom: 1px solid rgba(232,223,200,0.16);
+  box-shadow: 0 1px 0 rgba(232,223,200,0.05);
+}
+#quest-overlay .build-step-indicator {
+  letter-spacing: 0.16em;
+}
+#quest-overlay .build-next-btn {
+  background: linear-gradient(135deg, #f0e4c4, var(--accent2));
+  color: #141A16;
+  box-shadow: 0 2px 10px rgba(232,223,200,0.18);
+}
+#quest-overlay .build-next-btn:active { opacity: 0.85; }
+#quest-overlay .build-skip-btn {
+  border-color: rgba(232,223,200,0.2);
+  color: var(--accent2);
+}
 .quest-progress {
   display: flex;
   justify-content: center;
@@ -940,14 +968,16 @@ main { min-height: 100%; }
 }
 
 /* Intro pseudo shelf — illustrative only, never the real session pile.
-   Visually set back (dimmed, slightly smaller, non-interactive) so it
-   reads as an example of what the pile will look like, not as a library
-   already assigned to the user. */
+   Visually set back (dimmed, smaller, non-interactive) so it reads as an
+   example of what the pile will look like, not as a library already
+   assigned to the user. Spines inside keep their normal full size/overlap
+   (see _questIntroShelfHtml) — this scale is what makes the shelf read as
+   smaller, not any change to the spines themselves. */
 .quest-intro-shelf {
   padding: 4px 18px 20px;
   position: relative;
   opacity: 0.55;
-  transform: scale(0.93);
+  transform: scale(0.85);
   transform-origin: top center;
   pointer-events: none;
 }

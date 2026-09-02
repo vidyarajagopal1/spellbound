@@ -4924,17 +4924,18 @@ const QUEST_INTRO_SPINES = [
 
 function _questIntroShelfHtml() {
   const n = QUEST_INTRO_SPINES.length;
-  // Deliberately smaller than the real pile's spines (44px), and tilted the
-  // same way (spineTransformOffset, shared with the real pile) so the shelf
-  // reads as an example of the same object rather than a flat, literal list.
-  const SPINE_HEIGHT = 36;
-  const STEP         = 24;
-  const marginBottom = STEP - SPINE_HEIGHT;
+  // Uses the exact same size/overlap as every other .book-spine in the app
+  // (default 46px height, -6px overlap from the shared CSS rule — nothing
+  // overridden inline here) rather than a custom, tighter stack: that
+  // default is the one proven not to hide titles once rotation is applied.
+  // The "smaller/dimmer" de-emphasis this shelf needs comes entirely from
+  // .quest-intro-shelf's opacity + scale, not from shrinking the spines
+  // themselves.
   return QUEST_INTRO_SPINES.map((b, i) => {
     const color = getCoverColor(b.category);
     const { angle, shift } = spineTransformOffset(i);
     return `
-      <div class="book-spine" style="--spine-bg:${color};height:${SPINE_HEIGHT}px;margin-bottom:${marginBottom}px;transform:rotate(${angle}deg) translateX(${shift}px);z-index:${n - i};cursor:default">
+      <div class="book-spine" style="--spine-bg:${color};transform:rotate(${angle}deg) translateX(${shift}px);z-index:${n - i};cursor:default">
         <div class="spine-body">
           <span class="spine-title">${escapeHtml(b.title)}</span>
           <span class="spine-sep">·</span><span class="spine-author">${escapeHtml(b.author)}</span>
