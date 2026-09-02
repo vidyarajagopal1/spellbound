@@ -1965,6 +1965,41 @@ function normalizeBookQuery(s) {
     .trim();
 }
 
+// Maps a raw Google Books API response into the app's normalized result
+// shape. Shared by googleBooksSearch and googleBooksIncrementalSearch.
+function _mapGoogleBooksItems(data) {
+  return (data.items || []).map(it => {
+    const v = it.volumeInfo || {};
+    return {
+      title:       v.title || '',
+      subtitle:    v.subtitle || '',
+      fullTitle:   v.subtitle ? `${v.title}: ${v.subtitle}` : (v.title || ''),
+      author_name: v.authors || [],
+      subject:     v.categories || [],
+      description: v.description || '',
+      thumb:       (v.imageLinks?.thumbnail || '').replace(/^http:/, 'https:')
+    };
+  }).filter(r => r.title);
+}
+
+// Collapses duplicate editions of the same book. Key = normalized main
+// title (not fullTitle) + first author, both lowercased. When two results
+// share a key, keep whichever has a cover thumb; if both or neither do,
+// keep whichever appeared first.
+function _dedupeBookResults(results) {
+  const seen = new Map();
+  for (const r of results) {
+    const key = normalizeBookQuery(r.title).toLowerCase() + '|' + (r.author_name[0] || '').toLowerCase();
+    const existing = seen.get(key);
+    if (!existing) {
+      seen.set(key, r);
+    } else if (!existing.thumb && r.thumb) {
+      seen.set(key, r);
+    }
+  }
+  return [...seen.values()];
+}
+
 async function googleBooksSearch(query, { maxResults = 5, field = null, author = null, timeout = 8000 } = {}) {
   if (!navigator.onLine) return null;
   const cleaned = normalizeBookQuery(query);
@@ -1979,18 +2014,7 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, author =
       const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) return null;
       const data = await res.json();
-      return (data.items || []).map(it => {
-        const v = it.volumeInfo || {};
-        return {
-          title:       v.title || '',
-          subtitle:    v.subtitle || '',
-          fullTitle:   v.subtitle ? `${v.title}: ${v.subtitle}` : (v.title || ''),
-          author_name: v.authors || [],
-          subject:     v.categories || [],
-          description: v.description || '',
-          thumb:       (v.imageLinks?.thumbnail || '').replace(/^http:/, 'https:')
-        };
-      }).filter(r => r.title);
+      return _mapGoogleBooksItems(data);
     } catch {
       return null;
     } finally {
@@ -2009,6 +2033,7 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, author =
       results = await runQuery(`${field}:${cleaned}`);
     }
   }
+  if (results !== null) results = _dedupeBookResults(results);
   if (field && results !== null && results.length > 0) {
     const nq = normalizeBookQuery(query).toLowerCase();
     const score = r => {
@@ -2021,6 +2046,63 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, author =
     results.sort((a, b) => score(a) - score(b));
   }
   return results;
+}
+
+// Incremental (per-keystroke) title search for the typing search surfaces.
+// Unlike googleBooksSearch, this never falls back/retries with a different
+// query shape — it fires exactly one request per call. To work around the
+// Google Books API not prefix-matching, the word still being typed is
+// dropped from the request and instead used as a local substring filter
+// against the results the leading words already return.
+async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4000 } = {}) {
+  if (!navigator.onLine) return null;
+  const cleaned = normalizeBookQuery(query);
+  if (!cleaned) return [];
+  const q = cleaned.toLowerCase();
+  const words = cleaned.split(' ');
+  let sendWords = cleaned;
+  if (words.length > 1) {
+    const leading = words.slice(0, -1).join(' ');
+    if (leading.length >= 3) sendWords = leading;
+  }
+  const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(`intitle:${sendWords}`)}&printType=books&maxResults=30${await gbApiKeyParam()}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  let items;
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) return null;
+    const data = await res.json();
+    items = _mapGoogleBooksItems(data);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+  let results = items.filter(r => normalizeBookQuery(r.fullTitle).toLowerCase().includes(q));
+  results = _dedupeBookResults(results);
+  const tier = r => {
+    const t  = normalizeBookQuery(r.title).toLowerCase();
+    const ft = normalizeBookQuery(r.fullTitle).toLowerCase();
+    if (t === q || ft === q) return 0;
+    if (ft.startsWith(q)) return 1;
+    if (ft.split(' ').some(w => w.startsWith(q))) return 2;
+    return 3;
+  };
+  results = results
+    .map((r, i) => ({ r, i, t: tier(r) }))
+    .sort((a, b) => {
+      if (a.t !== b.t) return a.t - b.t;
+      const aAuthor = a.r.author_name?.length ? 0 : 1;
+      const bAuthor = b.r.author_name?.length ? 0 : 1;
+      if (aAuthor !== bAuthor) return aAuthor - bAuthor;
+      const aThumb = a.r.thumb ? 0 : 1;
+      const bThumb = b.r.thumb ? 0 : 1;
+      if (aThumb !== bThumb) return aThumb - bThumb;
+      return a.i - b.i; // stable within a tier
+    })
+    .map(x => x.r);
+  return results.slice(0, maxResults);
 }
 
 async function fetchWishlistDescription(item) {
@@ -3132,7 +3214,7 @@ async function _fnrFetchBooks(query) {
   const sugEl = document.getElementById('fnr-book-suggestions');
   sugEl.classList.remove('hidden');
   sugEl.innerHTML = '<p class="fnr-lookup-loading">Searching…</p>';
-  const results = await googleBooksSearch(query, { maxResults: 10, field: 'intitle' });
+  const results = await googleBooksIncrementalSearch(query, { maxResults: 10 });
   if (results === null) { sugEl.innerHTML = '<p class="fnr-lookup-loading">Lookup failed.</p>'; return; }
   const items = results.map(item => ({
     title:     item.title || '',
@@ -5139,7 +5221,7 @@ function questStage1SearchInput(value) {
   if (q.length < 2) { resultsEl.innerHTML = ''; return; }
   resultsEl.innerHTML = '<p class="quest-search-loading">Searching…</p>';
   _questSearchTimer = setTimeout(async () => {
-    const items = await googleBooksSearch(q, { maxResults: 8, field: 'intitle' });
+    const items = await googleBooksIncrementalSearch(q, { maxResults: 8 });
     if (!items)          { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
     if (items.length === 0) { resultsEl.innerHTML = '<p class="quest-search-loading">No results found.</p>'; return; }
     resultsEl._items = items;
@@ -5278,7 +5360,7 @@ function questMultiSearchInput(value, stageNum) {
   if (q.length < 2) { resultsEl.innerHTML = ''; return; }
   resultsEl.innerHTML = '<p class="quest-search-loading">Searching…</p>';
   _questSearchTimer = setTimeout(async () => {
-    const items = await googleBooksSearch(q, { maxResults: 8, field: 'intitle' });
+    const items = await googleBooksIncrementalSearch(q, { maxResults: 8 });
     if (!items)              { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
     if (items.length === 0) { resultsEl.innerHTML = '<p class="quest-search-loading">No results found.</p>'; return; }
     resultsEl._items = items;
@@ -5704,7 +5786,7 @@ function questFNRSearchInput(value) {
   if (q.length < 2) { resultsEl.innerHTML = ''; return; }
   resultsEl.innerHTML = '<p class="quest-search-loading">Searching…</p>';
   _questSearchTimer = setTimeout(async () => {
-    const items = await googleBooksSearch(q, { maxResults: 8, field: 'intitle' });
+    const items = await googleBooksIncrementalSearch(q, { maxResults: 8 });
     if (!items)              { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
     if (items.length === 0) { resultsEl.innerHTML = '<p class="quest-search-loading">No results found.</p>'; return; }
     resultsEl._items = items;
