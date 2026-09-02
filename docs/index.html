@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=153">
+  <link rel="stylesheet" href="styles.css?v=154">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
@@ -192,21 +192,6 @@
         <div class="fnr-header" id="fnr-header">
           <button class="fnr-back-btn" id="fnr-back-wishlist-btn" onclick="fnrBackToWishlist()"><i class="ph-bold ph-arrow-left"></i> Back to Wishlist</button>
           <button class="fnr-back-btn fnr-edit-prefs-btn hidden" id="fnr-edit-prefs-btn" onclick="fnrBack()"><i class="ph-bold ph-sliders"></i> Edit Preferences</button>
-        </div>
-
-        <!-- Quest-only intermission — shown between the quest handoff and the form
-             itself (both the five-or-more and under-five gate paths land here via
-             openFindNextRead(true)), never inside the form. Bookend treatment
-             matching the intro screen: see docs/quest-copy.md "On the FNR form". -->
-        <div id="fnr-quest-intermission" class="quest-stage" style="display:none">
-          <div class="quest-group">
-            <div class="quest-note-card">
-              <p class="quest-intro-heading">Fill in only the parts you feel strongly about.</p>
-            </div>
-          </div>
-          <div class="build-nav">
-            <button class="build-next-btn" onclick="fnrQuestContinueToForm()">Continue &rarr;</button>
-          </div>
         </div>
 
         <!-- Form section -->
@@ -747,7 +732,7 @@
   <script src="purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="app.js?v=153"></script>
+  <script src="app.js?v=154"></script>
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 

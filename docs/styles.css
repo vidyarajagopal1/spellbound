@@ -1047,6 +1047,15 @@ main { min-height: 100%; }
   color: #5a4c3a;
   opacity: 1;
 }
+/* Short instruction line (e.g. "Fill in only the parts you feel strongly
+   about") — a plain aside, not a heading, so it stays at body-text scale
+   rather than the card's heading treatment. */
+.quest-note-instruction {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #241c12;
+  line-height: 1.5;
+}
 
 /* Intro pseudo shelf — illustrative only, never the real session pile.
    Visually set back (dimmed, smaller, non-interactive) so it reads as an

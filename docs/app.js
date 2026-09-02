@@ -2991,12 +2991,12 @@ let _fnrQuestMode = false; // true when opened via the quest's Find Your Next Re
 
 // `fromQuest` is set by the quest's Stage 7 handoff (questHandoffToFNR), from
 // both the five-or-more and under-five gate paths. It switches on quest-only
-// UI: the "Fill in only the parts you feel strongly about" intermission
-// screen (#fnr-quest-intermission, shown before the form itself — never
-// inside it), the quest-specific failure message, and the "Go to Home" /
-// "See my shelf" exit buttons after a recommendation — see
-// docs/quest-copy.md "Find Your Next Read". Normal Wishlist-tab entry (the
-// only other caller) omits the argument and goes straight to the form.
+// UI: the quest-specific failure message and the "Go to Home" / "See my
+// shelf" exit buttons after a recommendation — see docs/quest-copy.md
+// "Find Your Next Read". The "Fill in only the parts you feel strongly
+// about" instruction is shown separately, inside the quest overlay itself,
+// before this function ever runs — see questShowFNRIntermission(). Normal
+// Wishlist-tab entry (the only other caller) omits the argument.
 function openFindNextRead(fromQuest = false) {
   _fnrQuestMode = fromQuest;
   _fnrFormState = null;
@@ -3004,18 +3004,11 @@ function openFindNextRead(fromQuest = false) {
   _fnrRejectedSlots = new Set();
   document.getElementById('wishlist-main').style.display = 'none';
   document.getElementById('fnr-content').style.display   = 'block';
-  document.getElementById('fnr-quest-intermission').style.display = fromQuest ? 'flex' : 'none';
-  document.getElementById('fnr-form-section').style.display    = fromQuest ? 'none' : 'block';
+  document.getElementById('fnr-form-section').style.display    = 'block';
   document.getElementById('fnr-results-section').style.display = 'none';
   document.getElementById('fnr-edit-prefs-btn').classList.add('hidden');
   document.getElementById('fnr-quest-exit').classList.add('hidden');
   _fnrRenderPills();
-}
-
-// Advances from the quest intermission screen into the actual FNR form.
-function fnrQuestContinueToForm() {
-  document.getElementById('fnr-quest-intermission').style.display = 'none';
-  document.getElementById('fnr-form-section').style.display       = 'block';
 }
 
 function fnrBack() {
@@ -5671,8 +5664,8 @@ function _renderQuestStage7(body) {
       </div>
       <div class="build-nav" id="quest-fnr-gate-actions">
         ${fiveOrMore
-          ? `<button class="build-next-btn" onclick="questHandoffToFNR()">Continue</button>`
-          : `<button class="build-skip-btn" onclick="questHandoffToFNR()">Go ahead anyway</button>
+          ? `<button class="build-next-btn" onclick="questShowFNRIntermission()">Continue</button>`
+          : `<button class="build-skip-btn" onclick="questShowFNRIntermission()">Go ahead anyway</button>
              <button class="build-next-btn" onclick="questFNRShowAddMore()">Add a few more</button>`}
       </div>
     </div>`;
@@ -5740,7 +5733,7 @@ async function questFNRSearchSelect(index) {
     }
     const actionsEl = document.getElementById('quest-fnr-gate-actions');
     if (actionsEl && count >= 5) {
-      actionsEl.innerHTML = `<button class="build-next-btn" onclick="questHandoffToFNR()">Continue</button>`;
+      actionsEl.innerHTML = `<button class="build-next-btn" onclick="questShowFNRIntermission()">Continue</button>`;
     }
   } catch (err) {
     console.error('questFNRSearchSelect failed', err);
@@ -5750,16 +5743,39 @@ async function questFNRSearchSelect(index) {
 
 // Hands off from the quest overlay to the existing Find Your Next Read
 // feature (Wishlist tab), rather than re-implementing its form inside the
-// quest — "Then the FNR form opens" per spec. openFindNextRead(true) flags
-// quest mode so it shows the "Fill in only the parts..." intermission
-// screen first, the failure state shows the quest-specific message, and the
+// quest — "Then the FNR form opens" per spec. Only ever called from the
+// intermission screen's Continue button (see questShowFNRIntermission),
+// i.e. after the user has already seen and dismissed the "Fill in only the
+// parts you feel strongly about" instruction. openFindNextRead(true) flags
+// quest mode so the failure state shows the quest-specific message and the
 // results screen gets the two quest exit buttons (see openFindNextRead /
-// submitFindNextRead / the #fnr-quest-intermission / #fnr-quest-exit
-// elements in index.html).
+// submitFindNextRead / the #fnr-quest-exit element in index.html).
 function questHandoffToFNR() {
   closeQuest();
   showView('wishlist');
   openFindNextRead(true);
+}
+
+// The "Fill in only the parts you feel strongly about" instruction — a
+// bookend moment like the intro, so it renders inside the quest overlay
+// itself (like every other quest screen) rather than after the handoff to
+// the Wishlist tab. Swaps #quest-body in place, same pattern as
+// questStage6StartCapture; the header/progress chrome from Stage 7 (no
+// dots, "Find Your Next Read" label) is already showing and stays as-is.
+function questShowFNRIntermission() {
+  const body = document.getElementById('quest-body');
+  if (!body) return;
+  body.innerHTML = `
+    <div class="build-step quest-stage">
+      <div class="quest-group">
+        <div class="quest-note-card">
+          <p class="quest-note-instruction">Fill in only the parts you feel strongly about.</p>
+        </div>
+      </div>
+      <div class="build-nav">
+        <button class="build-next-btn" onclick="questHandoffToFNR()">Continue &rarr;</button>
+      </div>
+    </div>`;
 }
 
 // Shared pile component — a filtered view of the library showing only books
