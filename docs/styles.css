@@ -7,7 +7,7 @@
   --surface2:   #22382C;
   --accent:     #e94560;
   --accent2:    #E8DFC8;
-  --selected:   #5C7F66;
+  --selected:   #E8DFC8;
   --text:       #e0e0e0;
   --text-muted: #9a9a9a;
   --radius:     12px;
@@ -1780,7 +1780,7 @@ main { min-height: 100%; }
 .medium-btn.active {
   background: var(--selected);
   border-color: var(--selected);
-  color: var(--accent2);
+  color: #141A16;
   font-weight: 600;
 }
 .medium-btn:active { opacity: 0.8; }
@@ -3580,7 +3580,7 @@ main { min-height: 100%; }
 .rating-btn.active {
   background: var(--selected);
   border-color: var(--selected);
-  color: var(--accent2);
+  color: #141A16;
   font-weight: 600;
 }
 
