@@ -5748,14 +5748,23 @@ function renderQuestPile() {
   const pileBooks = _questState.pileIds.map(id => books.find(b => b.id === id)).filter(Boolean);
 
   // Sizing constants. Titles must stay readable no matter how big the pile
-  // gets, so spines are NEVER compressed tighter than LEGIBLE_STEP — instead
-  // the shelf itself grows taller to fit the pile, up to MAX_GROWN_SPINES
-  // books. Past that point the shelf holds its max height and any additional
-  // spines simply scroll into view (see .quest-pile-shelf's overflow-y).
-  const FULL_HEIGHT      = 44;  // spine height — never shrunk
-  const LEGIBLE_STEP     = 26;  // floor for the vertical gap between spine tops; below this a title starts hiding behind the spine above it
+  // gets, so spines are NEVER compressed tighter than the app's own proven
+  // default overlap (-6px on a 44-46px spine, same ratio used everywhere
+  // else a rotated full-width spine appears — the Books tab pile, the real
+  // quest pile's own tiles, etc.) — a bigger overlap looks fine on paper but
+  // rotation (spineTransformOffset) drifts a full-width bar's visual edges
+  // by width × sin(angle), which can be 15-20px on a ~560px-wide bar even at
+  // just 1.8°. A step that ignores this drift both hides titles AND makes
+  // the shelf's computed height undershoot what's actually rendered
+  // (clipping the bottom spine) — this happened twice now (see v150 fix to
+  // the intro shelf for the same root cause). Instead of compressing
+  // further, the shelf grows taller to fit the pile, up to MAX_GROWN_SPINES
+  // books; past that it holds its max height and scrolls.
+  const FULL_HEIGHT      = 44;              // spine height — never shrunk
+  const LEGIBLE_STEP     = FULL_HEIGHT - 6; // matches .book-spine's own default -6px overlap — the only value proven safe under rotation
   const MAX_GROWN_SPINES = 8;   // shelf grows to fit the pile up to this many books before it caps out and scrolls
   const STACK_PADDING    = 20;  // .pile-stack's vertical padding (10px top + 10px bottom)
+  const ROTATION_BUFFER  = 20;  // extra headroom so rotation drift never clips the top/bottom spine against the shelf's computed height
   const EMPTY_HEIGHT     = 100; // shelf height while the pile is empty
 
   if (pileBooks.length === 0) {
@@ -5772,7 +5781,7 @@ function renderQuestPile() {
 
   const cappedN       = Math.min(n, MAX_GROWN_SPINES);
   const contentHeight = FULL_HEIGHT + (cappedN - 1) * LEGIBLE_STEP;
-  bar.style.height    = `${contentHeight + STACK_PADDING}px`;
+  bar.style.height    = `${contentHeight + STACK_PADDING + ROTATION_BUFFER}px`;
 
   const marginBottom = LEGIBLE_STEP - FULL_HEIGHT; // negative → a slight, always-legible overlap
 
