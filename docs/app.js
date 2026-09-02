@@ -4967,9 +4967,6 @@ function _renderQuestStage1(body) {
         <p class="build-prompt-small">Don't worry about chronology. The last one you remember works just fine.</p>
       </div>
       ${gridSectionHtml}
-      <div class="build-nav">
-        <button class="build-next-btn" id="quest-stage1-continue" ${chosen ? '' : 'disabled'} onclick="questGoToStage(2)">Continue</button>
-      </div>
     </div>`;
 }
 
@@ -4981,18 +4978,18 @@ function _questRenderStage1Grid() {
 }
 
 function _questUpdateStage1UI() {
-  const chosen       = _questStage1Book();
-  const continueBtn  = document.getElementById('quest-stage1-continue');
-  if (continueBtn) continueBtn.disabled = !chosen;
   _questRenderStage1Grid();
   renderQuestPile();
 }
 
+// Stage 1 takes exactly one book, so picking one advances straight to Stage 2
+// — there is no Continue button. Going Back from Stage 2 returns here with
+// the current pick highlighted (see _questStage1GridBooks), and choosing a
+// different tile simply re-selects and advances again.
 async function questStage1SelectImported(bookId) {
-  const chosen = _questStage1Book();
-  _questState.pileIds = (chosen && chosen.id === bookId) ? [] : [bookId];
+  _questState.pileIds = [bookId];
   await _saveQuestState();
-  _questUpdateStage1UI();
+  questGoToStage(2);
 }
 
 async function _questCreateBookFromSearchResult(item, status) {
@@ -5068,10 +5065,7 @@ async function questStage1SearchSelect(index) {
     const book = await _questCreateBookFromSearchResult(item, 'Completed');
     _questState.pileIds = [book.id];
     await _saveQuestState();
-    resultsEl.innerHTML = '';
-    const input = document.getElementById('quest-search-input-1');
-    if (input) { input.value = ''; input.focus(); }
-    _questUpdateStage1UI();
+    questGoToStage(2);
   } catch (err) {
     console.error('questStage1SearchSelect failed', err);
     resultsEl.innerHTML = '<p class="quest-search-loading">Something went wrong adding that book. Check the console for details.</p>';
@@ -5312,15 +5306,25 @@ function _renderQuestStage5(body) {
 // Shared pile component — a filtered view of the library showing only books
 // added to the pile during this quest session. Reuses the same spine markup
 // as the Books view, but stacks newest-on-top (bottom-anchored via CSS on
-// .quest-pile-shelf .pile-stack) and compresses spines as the pile grows so
-// everything fits within the shelf's fixed height without scrolling. Tapping
-// a spine removes it from the pile.
+// .quest-pile-shelf .pile-stack). Tapping a spine removes it from the pile.
 function renderQuestPile() {
   const bar = document.getElementById('quest-pile-bar');
   if (!bar || !_questState) return;
   const pileBooks = _questState.pileIds.map(id => books.find(b => b.id === id)).filter(Boolean);
 
+  // Sizing constants. Titles must stay readable no matter how big the pile
+  // gets, so spines are NEVER compressed tighter than LEGIBLE_STEP — instead
+  // the shelf itself grows taller to fit the pile, up to MAX_GROWN_SPINES
+  // books. Past that point the shelf holds its max height and any additional
+  // spines simply scroll into view (see .quest-pile-shelf's overflow-y).
+  const FULL_HEIGHT      = 44;  // spine height — never shrunk
+  const LEGIBLE_STEP     = 26;  // floor for the vertical gap between spine tops; below this a title starts hiding behind the spine above it
+  const MAX_GROWN_SPINES = 8;   // shelf grows to fit the pile up to this many books before it caps out and scrolls
+  const STACK_PADDING    = 20;  // .pile-stack's vertical padding (10px top + 10px bottom)
+  const EMPTY_HEIGHT     = 100; // shelf height while the pile is empty
+
   if (pileBooks.length === 0) {
+    bar.style.height = `${EMPTY_HEIGHT}px`;
     bar.innerHTML = '<p class="quest-pile-empty">Your pile starts here</p>';
     return;
   }
@@ -5331,29 +5335,11 @@ function renderQuestPile() {
   const ordered = pileBooks.slice().reverse();
   const n       = ordered.length;
 
-  // Compression math: fit `n` spines within the shelf's inner height budget
-  // (see AVAILABLE, which must stay comfortably under the shelf's CSS
-  // height minus its vertical padding — .quest-pile-shelf is 230px with
-  // 20px of vertical padding on .pile-stack). Spines default to full size;
-  // as the pile grows, the visible step between them shrinks first, and
-  // only as a last resort does the spine height itself shrink (never below
-  // MIN_HEIGHT, so titles stay legible).
-  const FULL_HEIGHT  = 44;
-  const MIN_HEIGHT   = 30;
-  const DEFAULT_STEP = FULL_HEIGHT - 6;
-  const MIN_STEP     = 12;
-  const AVAILABLE    = 200;
+  const cappedN       = Math.min(n, MAX_GROWN_SPINES);
+  const contentHeight = FULL_HEIGHT + (cappedN - 1) * LEGIBLE_STEP;
+  bar.style.height    = `${contentHeight + STACK_PADDING}px`;
 
-  let spineHeight = FULL_HEIGHT;
-  let step        = DEFAULT_STEP;
-  if (spineHeight + (n - 1) * step > AVAILABLE && n > 1) {
-    step = Math.max(MIN_STEP, (AVAILABLE - spineHeight) / (n - 1));
-  }
-  if (spineHeight + (n - 1) * step > AVAILABLE && n > 1) {
-    spineHeight = Math.max(MIN_HEIGHT, AVAILABLE - (n - 1) * MIN_STEP);
-    step        = MIN_STEP;
-  }
-  const marginBottom = step - spineHeight; // negative → overlapping spines
+  const marginBottom = LEGIBLE_STEP - FULL_HEIGHT; // negative → a slight, always-legible overlap
 
   const spinesHtml = ordered.map((b, i) => {
     const color  = getCoverColor(b.category);
@@ -5366,7 +5352,7 @@ function renderQuestPile() {
     const mediumHtml = medium ? `<span class="spine-medium">${medium}</span>` : '';
     return `
       <div class="book-spine" onclick="questRemoveFromPile(${b.id})"
-           style="--spine-bg:${color};height:${spineHeight}px;margin-bottom:${marginBottom}px;transform:rotate(${angle}deg) translateX(${shift}px);z-index:${zIdx}">
+           style="--spine-bg:${color};height:${FULL_HEIGHT}px;margin-bottom:${marginBottom}px;transform:rotate(${angle}deg) translateX(${shift}px);z-index:${zIdx}">
         <div class="spine-body">
           <span class="spine-title">${escapeHtml(b.title)}</span>
           ${authorHtml}

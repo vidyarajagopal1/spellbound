@@ -852,10 +852,14 @@ main { min-height: 100%; }
   flex-shrink: 0;
   width: calc(100% - 2rem);
   max-width: 600px;
-  height: 230px;
+  /* Height is set inline by renderQuestPile() and grows with the pile (up to
+     an 8-book cap) so spines are never compressed past legibility; this is
+     just a sane fallback before JS first runs. */
+  height: 100px;
   margin: 0.9rem auto 0;
   overflow-y: auto;
-  scrollbar-width: none; /* compression is the primary fix; this is just a safety net for extreme piles */
+  transition: height 0.2s ease;
+  scrollbar-width: none; /* the 8-book cap is the primary fix; this is just a safety net beyond it */
   background: var(--surface);
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 12px;
