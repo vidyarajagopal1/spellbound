@@ -5001,7 +5001,10 @@ async function _questCreateBookFromSearchResult(item, status) {
     title:         item.title || '',
     author:        (item.author_name || []).join(', '),
     status:        status,
-    category:      mapCategory(item.subject),
+    // Left blank on purpose: categorised in the background by AI (same as
+    // Goodreads import), not the local heading-guess used elsewhere in the
+    // app. See _questCategorizeInBackground.
+    category:      '',
     medium:        '',
     rating:        '',
     notes:         '',
@@ -5012,7 +5015,26 @@ async function _questCreateBookFromSearchResult(item, status) {
   };
   await dbPut('books', book);
   await saveAndSync();
+  _questCategorizeInBackground(book); // fire-and-forget — never blocks the quest flow
   return book;
+}
+
+// Categorises a single newly-added quest book using the same AI
+// categorisation as Goodreads import (_grCategorizeBooks). Deliberately not
+// awaited by callers: the spine renders immediately in the default colour
+// and recolours in place if/when this resolves. A failed or slow call
+// simply leaves the book uncategorised — the quest is never blocked by it.
+async function _questCategorizeInBackground(book) {
+  try {
+    await _grCategorizeBooks([book]);
+    if (!book.category) return; // AI couldn't confidently place it — stays uncategorised
+    book.updatedAt = new Date().toISOString();
+    await dbPut('books', book);
+    await loadData();   // refresh in-memory `books` so getCoverColor sees the new category
+    renderQuestPile();  // recolour the shelf now that the category resolved
+  } catch (err) {
+    console.error('_questCategorizeInBackground failed', err);
+  }
 }
 
 function questStage1SearchInput(value) {
@@ -5073,6 +5095,9 @@ function _renderQuestStage2(body) {
           ${QUEST_RATING_ORDER.map(key => `<button type="button" class="quest-rating-btn" onclick="questStage2SelectRating('${key}')">${RATING_LABELS[key].label}</button>`).join('')}
         </div>
         <p class="quest-note-sub quest-rating-note">We don't do stars, because a book can be five stars and still leave you cold.</p>
+      </div>
+      <div class="build-nav">
+        <button class="build-skip-btn" onclick="questGoToStage(1)">&larr; Back</button>
       </div>
     </div>`;
 }
@@ -5238,6 +5263,7 @@ function _renderQuestStage3(body) {
       </div>
       ${gridSectionHtml}
       <div class="build-nav">
+        <button class="build-skip-btn" onclick="questGoToStage(2)">&larr; Back</button>
         <button class="build-next-btn" id="quest-stage3-advance" onclick="questGoToStage(4)">Maybe later</button>
       </div>
     </div>`;
@@ -5256,6 +5282,7 @@ function _renderQuestStage4(body) {
         ${_questMultiSearchBlockHtml(4)}
       </div>
       <div class="build-nav">
+        <button class="build-skip-btn" onclick="questGoToStage(3)">&larr; Back</button>
         <button class="build-next-btn" id="quest-stage4-advance" onclick="questGoToStage(5)">Maybe later</button>
       </div>
     </div>`;
@@ -5274,6 +5301,7 @@ function _renderQuestStage5(body) {
         ${_questMultiSearchBlockHtml(5)}
       </div>
       <div class="build-nav">
+        <button class="build-skip-btn" onclick="questGoToStage(4)">&larr; Back</button>
         <button class="build-next-btn" id="quest-stage5-advance" onclick="questGoToStage(6)">Maybe later</button>
       </div>
     </div>`;
@@ -5283,7 +5311,10 @@ function _renderQuestStage5(body) {
 
 // Shared pile component — a filtered view of the library showing only books
 // added to the pile during this quest session. Reuses the same spine markup
-// as the Books view. Tapping a spine removes it from the pile.
+// as the Books view, but stacks newest-on-top (bottom-anchored via CSS on
+// .quest-pile-shelf .pile-stack) and compresses spines as the pile grows so
+// everything fits within the shelf's fixed height without scrolling. Tapping
+// a spine removes it from the pile.
 function renderQuestPile() {
   const bar = document.getElementById('quest-pile-bar');
   if (!bar || !_questState) return;
@@ -5294,10 +5325,40 @@ function renderQuestPile() {
     return;
   }
 
-  const spinesHtml = pileBooks.map((b, i) => {
+  // Newest-first: with the container's normal (non-reversed) column layout,
+  // the first DOM child renders as the topmost spine — so the most recently
+  // added book lands on top of the stack, exactly like a real pile.
+  const ordered = pileBooks.slice().reverse();
+  const n       = ordered.length;
+
+  // Compression math: fit `n` spines within the shelf's inner height budget
+  // (see AVAILABLE, which must stay comfortably under the shelf's CSS
+  // height minus its vertical padding — .quest-pile-shelf is 230px with
+  // 20px of vertical padding on .pile-stack). Spines default to full size;
+  // as the pile grows, the visible step between them shrinks first, and
+  // only as a last resort does the spine height itself shrink (never below
+  // MIN_HEIGHT, so titles stay legible).
+  const FULL_HEIGHT  = 44;
+  const MIN_HEIGHT   = 30;
+  const DEFAULT_STEP = FULL_HEIGHT - 6;
+  const MIN_STEP     = 12;
+  const AVAILABLE    = 200;
+
+  let spineHeight = FULL_HEIGHT;
+  let step        = DEFAULT_STEP;
+  if (spineHeight + (n - 1) * step > AVAILABLE && n > 1) {
+    step = Math.max(MIN_STEP, (AVAILABLE - spineHeight) / (n - 1));
+  }
+  if (spineHeight + (n - 1) * step > AVAILABLE && n > 1) {
+    spineHeight = Math.max(MIN_HEIGHT, AVAILABLE - (n - 1) * MIN_STEP);
+    step        = MIN_STEP;
+  }
+  const marginBottom = step - spineHeight; // negative → overlapping spines
+
+  const spinesHtml = ordered.map((b, i) => {
     const color  = getCoverColor(b.category);
     const medium = getMediumIcon(b.medium);
-    const zIdx   = pileBooks.length - i;
+    const zIdx   = n - i; // newest (i=0) sits on top, visually covering older spines below it
     const { angle, shift } = spineTransformOffset(b.id);
     const authorHtml = b.author
       ? `<span class="spine-sep">·</span><span class="spine-author">${escapeHtml(b.author)}</span>`
@@ -5305,7 +5366,7 @@ function renderQuestPile() {
     const mediumHtml = medium ? `<span class="spine-medium">${medium}</span>` : '';
     return `
       <div class="book-spine" onclick="questRemoveFromPile(${b.id})"
-           style="--spine-bg:${color};transform:rotate(${angle}deg) translateX(${shift}px);z-index:${zIdx}">
+           style="--spine-bg:${color};height:${spineHeight}px;margin-bottom:${marginBottom}px;transform:rotate(${angle}deg) translateX(${shift}px);z-index:${zIdx}">
         <div class="spine-body">
           <span class="spine-title">${escapeHtml(b.title)}</span>
           ${authorHtml}
