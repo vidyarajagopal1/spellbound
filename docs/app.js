@@ -2034,9 +2034,14 @@ function _mapGoogleBooksItems(data) {
   })
     .filter(r => r.title)
     // langRestrict on the request biases results but doesn't strictly
-    // guarantee it, so also filter client-side. Missing language metadata
-    // is kept rather than dropped (some legit entries omit it).
-    .filter(r => !r.language || r.language === 'en')
+    // guarantee it, so also filter client-side. NOTE (v178): previously
+    // this kept entries with no `language` tag at all (reasoning: don't
+    // lose legit English books with missing metadata) — but that let
+    // untagged non-English editions (e.g. a French edition Google didn't
+    // tag) slip through, which is worse than occasionally dropping a
+    // genuinely-English-but-untagged result. Now strict: only keep
+    // entries explicitly tagged 'en'.
+    .filter(r => r.language === 'en')
     .filter(r => !STUDY_GUIDE_PATTERN.test(r.fullTitle) && !(r.subject || []).some(c => /study aids/i.test(c)));
 }
 
