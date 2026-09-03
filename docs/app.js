@@ -2113,7 +2113,7 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, author =
 // typing." instead of "No results found." in that case.
 const GB_STOPWORDS = new Set(['the','a','an','of','and','or','in','on','to','for','at','by','is','it']);
 
-let _gbIncrementalCache = { key: null, items: null };
+let _gbIncrementalCache = { key: null, items: null, usedFallback: false };
 
 async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4000, author = null } = {}) {
   if (!navigator.onLine) return null;
@@ -2136,8 +2136,10 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
     return empty;
   }
   let items;
+  let usedFallback = false;
   if (_gbIncrementalCache.key === sendWords) {
     items = _gbIncrementalCache.items;
+    usedFallback = _gbIncrementalCache.usedFallback;
   } else {
     const fields = encodeURIComponent('items(volumeInfo(title,subtitle,authors,categories,imageLinks,language))');
     const fetchOnce = async (qParam) => {
@@ -2165,9 +2167,9 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
     // applying the same local substring filter as normal.
     if (isSingleWord && items.length === 0 && sendWords.length >= 4) {
       const fallback = await fetchOnce(sendWords);
-      if (fallback !== null) items = fallback;
+      if (fallback !== null) { items = fallback; usedFallback = true; }
     }
-    _gbIncrementalCache = { key: sendWords, items };
+    _gbIncrementalCache = { key: sendWords, items, usedFallback };
   }
   let results = items.filter(r => normalizeBookQuery(r.fullTitle).toLowerCase().includes(q));
   if (author) {
@@ -2179,6 +2181,25 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
   const tier = r => {
     const t  = normalizeBookQuery(r.title).toLowerCase();
     const ft = normalizeBookQuery(r.fullTitle).toLowerCase();
+    if (usedFallback) {
+      // The fallback query drops Google's intitle: field restriction and
+      // ranks by broad relevance instead of an exact title match, so a
+      // string that equals the (still-incomplete) fragment exactly is
+      // often just coincidental noise — e.g. an obscure book whose real
+      // title happens to BE "Rebecc" — rather than the well-known book
+      // the user is actually mid-typing toward. Prioritize a title word
+      // that plausibly CONTINUES past the fragment (the far more common
+      // case while still typing) over a bare exact-string match, and rank
+      // a continuation in the title's first word above one found later in
+      // the title (e.g. prefer "Rebecca" over "Short Stories by Rebecca").
+      const firstWord = ft.split(' ')[0] || '';
+      if (firstWord.startsWith(q) && firstWord.length > q.length) return 0;
+      if (ft.split(' ').some(w => w !== firstWord && w.startsWith(q) && w.length > q.length)) return 1;
+      if (t === q || ft === q) return 2;
+      if (ft.startsWith(q)) return 3;
+      if (ft.split(' ').some(w => w.startsWith(q))) return 4;
+      return 5;
+    }
     if (t === q || ft === q) return 0;
     if (ft.startsWith(q)) return 1;
     if (ft.split(' ').some(w => w.startsWith(q))) return 2;
