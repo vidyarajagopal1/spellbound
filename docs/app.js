@@ -2027,6 +2027,8 @@ function _mapGoogleBooksItems(data) {
       subject:     v.categories || [],
       description: v.description || '',
       language:    v.language || '',
+      ratingsCount: v.ratingsCount || 0,
+      averageRating: v.averageRating || 0,
       thumb:       (v.imageLinks?.thumbnail || '').replace(/^http:/, 'https:')
     };
   })
@@ -2038,18 +2040,37 @@ function _mapGoogleBooksItems(data) {
     .filter(r => !STUDY_GUIDE_PATTERN.test(r.fullTitle) && !(r.subject || []).some(c => /study aids/i.test(c)));
 }
 
-// Collapses duplicate editions of the same book. Key = normalized main
-// title (not fullTitle) + first author, both lowercased. When two results
-// share a key, keep whichever has a cover thumb; if both or neither do,
-// keep whichever appeared first.
+// Phrases/bracketed tags that mark a specific EDITION or format variant of a
+// book rather than a different work ("Illustrated Edition", "(Virago Modern
+// Classics)", "Movie Tie-In Edition", ": A Novel", etc.) — stripped before
+// computing the dedup key below so different editions of the SAME book
+// collapse into a single result instead of one card per edition.
+const EDITION_NOISE_PATTERN = /\s*[\(\[][^)\]]*[\)\]]|\b(illustrated|annotated|unabridged|abridged|large print|deluxe|collector'?s?|special|revised|anniversary|movie tie-in|tie-in|author'?s preferred text|box set|boxset|omnibus|definitive|reader'?s)\s*(edition|version|text)?\b|:\s*a novel\b/gi;
+
+function _dedupeTitleKey(title) {
+  return normalizeBookQuery((title || '').replace(EDITION_NOISE_PATTERN, ' ')).toLowerCase();
+}
+
+// Collapses duplicate editions of the same book. Key = a cleaned main title
+// (edition/format noise stripped via _dedupeTitleKey, NOT the raw title —
+// see EDITION_NOISE_PATTERN) + first author, both lowercased. When two
+// results share a key, prefer the one with the higher ratingsCount (the
+// edition most readers actually know/own); tie-break on whichever has a
+// cover thumb, then whichever appeared first.
 function _dedupeBookResults(results) {
   const seen = new Map();
   for (const r of results) {
-    const key = normalizeBookQuery(r.title).toLowerCase() + '|' + (r.author_name[0] || '').toLowerCase();
+    const key = _dedupeTitleKey(r.title) + '|' + (r.author_name[0] || '').toLowerCase();
     const existing = seen.get(key);
     if (!existing) {
       seen.set(key, r);
-    } else if (!existing.thumb && r.thumb) {
+      continue;
+    }
+    const rRatings = r.ratingsCount || 0;
+    const eRatings = existing.ratingsCount || 0;
+    if (rRatings > eRatings) {
+      seen.set(key, r);
+    } else if (rRatings === eRatings && !existing.thumb && r.thumb) {
       seen.set(key, r);
     }
   }
@@ -2099,7 +2120,15 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, author =
       if (t.split(' ').some(w => w.startsWith(nq))) return 2;
       return 3;
     };
-    results.sort((a, b) => score(a) - score(b));
+    results.sort((a, b) => {
+      const sa = score(a), sb = score(b);
+      if (sa !== sb) return sa - sb;
+      // Google Books has no notion of "fame" in its text-match ranking, so a
+      // little-known book that string-matches equally well as a widely-read
+      // one would otherwise win ties arbitrarily (raw API order). Breaking
+      // ties by ratingsCount surfaces the book most readers actually mean.
+      return (b.ratingsCount || 0) - (a.ratingsCount || 0);
+    });
   }
   return results;
 }
@@ -2170,7 +2199,7 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
   if (_gbIncrementalCache.key === sendWords) {
     items = _gbIncrementalCache.items;
   } else {
-    const fields = encodeURIComponent('items(volumeInfo(title,subtitle,authors,categories,imageLinks,language))');
+    const fields = encodeURIComponent('items(volumeInfo(title,subtitle,authors,categories,imageLinks,language,ratingsCount,averageRating))');
     const fetchOnce = async (qParam) => {
       const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(qParam)}&printType=books&langRestrict=en&maxResults=30&fields=${fields}${await gbApiKeyParam()}`;
       const controller = new AbortController();
@@ -2249,6 +2278,11 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
     .map((r, i) => ({ r, i, t: tier(r) }))
     .sort((a, b) => {
       if (a.t !== b.t) return a.t - b.t;
+      // Same rationale as googleBooksSearch's ratingsCount tiebreak: within
+      // a tier, text-match strength alone can't distinguish a famous book
+      // from an obscure one that happens to match equally well.
+      const ratingsDiff = (b.r.ratingsCount || 0) - (a.r.ratingsCount || 0);
+      if (ratingsDiff !== 0) return ratingsDiff;
       const aAuthor = a.r.author_name?.length ? 0 : 1;
       const bAuthor = b.r.author_name?.length ? 0 : 1;
       if (aAuthor !== bAuthor) return aAuthor - bAuthor;
