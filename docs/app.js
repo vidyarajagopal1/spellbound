@@ -2136,10 +2136,8 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
     return empty;
   }
   let items;
-  let usedFallback = false;
   if (_gbIncrementalCache.key === sendWords) {
     items = _gbIncrementalCache.items;
-    usedFallback = _gbIncrementalCache.usedFallback;
   } else {
     const fields = encodeURIComponent('items(volumeInfo(title,subtitle,authors,categories,imageLinks,language))');
     const fetchOnce = async (qParam) => {
@@ -2159,17 +2157,24 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
     };
     items = await fetchOnce(`intitle:"${sendWords}"`);
     if (items === null) return null;
-    // Google's intitle: field operator only matches whole tokens, so a
-    // still-being-typed single word can structurally never match above (see
-    // note below). Fall back to a plain, unrestricted keyword query (no
-    // field operator, no quotes) — Google's general q= search tolerates
-    // partial/prefix input far better than intitle: does — then keep
-    // applying the same local substring filter as normal.
-    if (isSingleWord && items.length === 0 && sendWords.length >= 4) {
-      const fallback = await fetchOnce(sendWords);
-      if (fallback !== null) { items = fallback; usedFallback = true; }
+    // A still-being-typed single word may be incomplete, and Google's
+    // intitle: operator's own matching behavior for a partial/incomplete
+    // token is unpredictable (sometimes substring-matches, sometimes
+    // doesn't) — it's NOT reliable enough on its own to guarantee the
+    // intended book is even present in this result set, regardless of
+    // whether that set came back empty or not. So for single-word queries,
+    // ALWAYS also fire a second, broader query with the intitle: field
+    // restriction dropped entirely (Google's general q= search tolerates
+    // partial/prefix input far better) and merge both result sets — this
+    // maximizes the chance the intended book is in the candidate pool at
+    // all, and the tier() ranking below (which is fragment-continuation
+    // aware for single-word queries) sorts the merged set correctly
+    // regardless of which query actually surfaced the right book.
+    if (isSingleWord && sendWords.length >= 4) {
+      const broader = await fetchOnce(sendWords);
+      if (broader !== null) items = items.concat(broader);
     }
-    _gbIncrementalCache = { key: sendWords, items, usedFallback };
+    _gbIncrementalCache = { key: sendWords, items };
   }
   let results = items.filter(r => normalizeBookQuery(r.fullTitle).toLowerCase().includes(q));
   if (author) {
@@ -2181,16 +2186,20 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
   const tier = r => {
     const t  = normalizeBookQuery(r.title).toLowerCase();
     const ft = normalizeBookQuery(r.fullTitle).toLowerCase();
-    if (usedFallback) {
-      // The fallback query drops Google's intitle: field restriction and
-      // ranks by broad relevance instead of an exact title match, so a
-      // string that equals the (still-incomplete) fragment exactly is
-      // often just coincidental noise — e.g. an obscure book whose real
-      // title happens to BE "Rebecc" — rather than the well-known book
-      // the user is actually mid-typing toward. Prioritize a title word
-      // that plausibly CONTINUES past the fragment (the far more common
-      // case while still typing) over a bare exact-string match, and rank
-      // a continuation in the title's first word above one found later in
+    if (isSingleWord) {
+      // A single word may still be incomplete (the user is still typing),
+      // so a title that merely STARTS WITH or EQUALS the fragment isn't a
+      // reliable "best match" signal on its own — plenty of unrelated (or
+      // obscure) real titles can start with/equal any given short prefix
+      // (e.g. "rebecc" matches both "Rebecca" and an obscure book actually
+      // titled "Rebecc: Oder..."). This applies regardless of whether the
+      // API request that produced these items was the strict intitle:
+      // query or the broader unquoted fallback — Google's intitle:
+      // operator does substring matching even when quoted, so this
+      // ambiguity isn't fallback-specific. Prioritize a title word that
+      // plausibly CONTINUES past the fragment (the far more common case
+      // while still typing) over a bare prefix/exact match, and rank a
+      // continuation in the title's first word above one found later in
       // the title (e.g. prefer "Rebecca" over "Short Stories by Rebecca").
       const firstWord = ft.split(' ')[0] || '';
       if (firstWord.startsWith(q) && firstWord.length > q.length) return 0;
