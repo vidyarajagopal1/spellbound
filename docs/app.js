@@ -2298,24 +2298,30 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
     const t  = normalizeBookQuery(r.title).toLowerCase();
     const ft = normalizeBookQuery(r.fullTitle).toLowerCase();
     if (isSingleWord) {
+      // BUG FIX (v176): an EXACT match must always rank best, full stop —
+      // it was previously ranked BELOW a "continuation" (see next
+      // paragraph), which backfired badly for a fully/correctly typed
+      // complete word: "rebecca" (exact) was outranked by "Rebecca's
+      // Choice" (normalizeBookQuery strips the apostrophe, making
+      // "Rebeccas" a longer string that "continues past" "rebecca"),
+      // silently defeating the ratingsCount/edition_count popularity
+      // tiebreaks below since those only apply WITHIN a tier — the wrong
+      // tier ordering meant they never even got consulted.
+      if (t === q || ft === q) return 0;
       // A single word may still be incomplete (the user is still typing),
-      // so a title that merely STARTS WITH or EQUALS the fragment isn't a
-      // reliable "best match" signal on its own — plenty of unrelated (or
-      // obscure) real titles can start with/equal any given short prefix
-      // (e.g. "rebecc" matches both "Rebecca" and an obscure book actually
-      // titled "Rebecc: Oder..."). This applies regardless of whether the
-      // API request that produced these items was the strict intitle:
-      // query or the broader unquoted fallback — Google's intitle:
-      // operator does substring matching even when quoted, so this
-      // ambiguity isn't fallback-specific. Prioritize a title word that
-      // plausibly CONTINUES past the fragment (the far more common case
-      // while still typing) over a bare prefix/exact match, and rank a
-      // continuation in the title's first word above one found later in
-      // the title (e.g. prefer "Rebecca" over "Short Stories by Rebecca").
+      // so a title that merely STARTS WITH the fragment isn't a reliable
+      // "best match" signal on its own — plenty of unrelated (or obscure)
+      // real titles can start with any given short prefix (e.g. "rebecc"
+      // matches both "Rebecca" and an obscure book actually titled
+      // "Rebecc: Oder..."). Prioritize a title word that plausibly
+      // CONTINUES past the fragment (the far more common case while still
+      // typing) over a bare prefix match, and rank a continuation in the
+      // title's first word above one found later in the title (e.g.
+      // prefer "Rebecca" over "Short Stories by Rebecca") — but only as a
+      // tiebreak AMONG non-exact matches, never above an exact one.
       const firstWord = ft.split(' ')[0] || '';
-      if (firstWord.startsWith(q) && firstWord.length > q.length) return 0;
-      if (ft.split(' ').some(w => w !== firstWord && w.startsWith(q) && w.length > q.length)) return 1;
-      if (t === q || ft === q) return 2;
+      if (firstWord.startsWith(q) && firstWord.length > q.length) return 1;
+      if (ft.split(' ').some(w => w !== firstWord && w.startsWith(q) && w.length > q.length)) return 2;
       if (ft.startsWith(q)) return 3;
       if (ft.split(' ').some(w => w.startsWith(q))) return 4;
       return 5;
@@ -2355,17 +2361,15 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
       return a.i - b.i; // stable within a tier
     });
   // Google's search has no wildcard/prefix operator, so for a single-word
-  // query none of these results can ever be PROVEN to include the book the
-  // user is still mid-typing toward — they're only ever a plausible guess.
-  // If even the very best-ranked result is merely an exact/coincidental
-  // match to the fragment itself (tier 2+, i.e. no title was found that
-  // plausibly CONTINUES past it — tier 0/1), that's a strong signal these
-  // are likely unrelated real words/titles that happen to equal the
-  // fragment (e.g. "rebec", the bowed instrument, while the user is still
-  // typing "Rebecca") rather than the intended book. Flag this so callers
-  // can show a "keep typing" nudge alongside the results instead of
-  // presenting them as a confident final answer.
-  const weakMatch = isSingleWord && results.length > 0 && results[0].t >= 2;
+  // query these results are only ever a plausible guess unless something
+  // here is either an EXACT match (tier 0, the fully-typed word matches a
+  // real title) or a plausible CONTINUATION of it (tier 1/2, some title
+  // extends past the fragment — e.g. "Neverwhere" continuing "neverwher").
+  // If the best available match is neither (tier 3+, only a bare
+  // prefix/substring hit), that's a weak signal — nothing here confirms
+  // the fragment is even a complete or continuable word, so flag it for
+  // callers to show a "keep typing" nudge instead of a confident answer.
+  const weakMatch = isSingleWord && results.length > 0 && results[0].t >= 3;
   results = results.map(x => x.r);
   results = results.slice(0, maxResults);
   if (results.length === 0 && isSingleWord) results._incomplete = true;
