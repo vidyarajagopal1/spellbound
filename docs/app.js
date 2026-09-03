@@ -2173,7 +2173,52 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, author =
 // typing." instead of "No results found." in that case.
 const GB_STOPWORDS = new Set(['the','a','an','of','and','or','in','on','to','for','at','by','is','it']);
 
-let _gbIncrementalCache = { key: null, items: null, usedFallback: false };
+// Open Library's search API returns `edition_count` per matching work — how
+// many times it's actually been published/reprinted. Verified live: this is
+// a FAR stronger, better-populated fame signal than Google Books'
+// `ratingsCount` (Play Books review data, which is 0 for most books,
+// famous or not). E.g. "Rebecca" by Daphne du Maurier returns
+// edition_count 200+ vs. 1-2 for obscure same/similar-titled books. Scoped
+// to single-word incremental searches (where Google's own ranking is most
+// prone to ties between a famous and an obscure book that string-match
+// equally well) to limit added network calls. Returns a Map keyed by
+// "<cleaned title>|<first author lowercased>" (same key shape as
+// _dedupeBookResults, so lookups line up) -> highest edition_count seen for
+// that key, or null on failure/timeout/offline — callers must treat null as
+// "no popularity data available", not "everything here is unpopular".
+// IMPORTANT LIMITATION (confirmed by live testing, not assumed): Open
+// Library's own search does NOT reliably surface a book from a still-
+// incomplete final word either (e.g. querying "rebecc" does not return
+// "Rebecca" here any more than Google does) — this fixes ranking AMONG
+// candidates that ARE returned, it cannot invent a candidate that neither
+// engine's relevance search returned in the first place. That remaining gap
+// is the same structural ceiling already documented above for isSingleWord
+// + _incomplete/_weakMatch.
+async function _openLibraryEditionCounts(query, timeout = 3000) {
+  if (!navigator.onLine) return null;
+  const fields = encodeURIComponent('title,author_name,edition_count');
+  const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=20&fields=${fields}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const map = new Map();
+    for (const d of (data.docs || [])) {
+      const key = _dedupeTitleKey(d.title) + '|' + ((d.author_name || [])[0] || '').toLowerCase();
+      const count = d.edition_count || 0;
+      if (!map.has(key) || map.get(key) < count) map.set(key, count);
+    }
+    return map;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+let _gbIncrementalCache = { key: null, items: null, olMap: null };
 
 async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4000, author = null } = {}) {
   if (!navigator.onLine) return null;
@@ -2196,8 +2241,10 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
     return empty;
   }
   let items;
+  let olMap;
   if (_gbIncrementalCache.key === sendWords) {
     items = _gbIncrementalCache.items;
+    olMap = _gbIncrementalCache.olMap;
   } else {
     const fields = encodeURIComponent('items(volumeInfo(title,subtitle,authors,categories,imageLinks,language,ratingsCount,averageRating))');
     const fetchOnce = async (qParam) => {
@@ -2215,6 +2262,9 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
         clearTimeout(timer);
       }
     };
+    // Fired in parallel with the Google request(s) below (not awaited until
+    // after), so it adds no extra sequential latency in the common case.
+    const olPromise = isSingleWord ? _openLibraryEditionCounts(sendWords) : Promise.resolve(null);
     items = await fetchOnce(`intitle:"${sendWords}"`);
     if (items === null) return null;
     // A still-being-typed single word may be incomplete, and Google's
@@ -2234,7 +2284,8 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
       const broader = await fetchOnce(sendWords);
       if (broader !== null) items = items.concat(broader);
     }
-    _gbIncrementalCache = { key: sendWords, items };
+    olMap = await olPromise;
+    _gbIncrementalCache = { key: sendWords, items, olMap };
   }
   let results = items.filter(r => normalizeBookQuery(r.fullTitle).toLowerCase().includes(q));
   if (author) {
@@ -2278,6 +2329,18 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
     .map((r, i) => ({ r, i, t: tier(r) }))
     .sort((a, b) => {
       if (a.t !== b.t) return a.t - b.t;
+      // Open Library's edition_count is a much stronger, better-populated
+      // fame signal than Google's ratingsCount (see _openLibraryEditionCounts)
+      // — checked first when available (single-word queries only; olMap is
+      // null otherwise). ratingsCount remains the fallback/secondary
+      // tiebreak for whatever olMap doesn't recognize or when it's absent.
+      if (olMap) {
+        const aKey = _dedupeTitleKey(a.r.title) + '|' + (a.r.author_name[0] || '').toLowerCase();
+        const bKey = _dedupeTitleKey(b.r.title) + '|' + (b.r.author_name[0] || '').toLowerCase();
+        const aEd = olMap.get(aKey) || 0;
+        const bEd = olMap.get(bKey) || 0;
+        if (aEd !== bEd) return bEd - aEd;
+      }
       // Same rationale as googleBooksSearch's ratingsCount tiebreak: within
       // a tier, text-match strength alone can't distinguish a famous book
       // from an obscure one that happens to match equally well.

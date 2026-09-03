@@ -1,9 +1,9 @@
-const CACHE_NAME = 'spellbound-v174';
+const CACHE_NAME = 'spellbound-v175';
 const ASSETS = [
   '/',
   '/index.html',
-  '/app.js?v=174',
-  '/styles.css?v=174',
+  '/app.js?v=175',
+  '/styles.css?v=175',
   '/logo-header.png',
   '/manifest.json',
   '/purify.min.js',
@@ -29,8 +29,8 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // Let Google API requests pass through uncached
-  if (e.request.url.includes('googleapis.com') || e.request.url.includes('accounts.google.com')) {
+  // Let Google/Open Library API requests pass through uncached
+  if (e.request.url.includes('googleapis.com') || e.request.url.includes('accounts.google.com') || e.request.url.includes('openlibrary.org')) {
     return;
   }
   // Always try the network first for the HTML shell so it never gets stuck
