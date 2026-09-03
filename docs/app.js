@@ -1249,7 +1249,26 @@ async function fetchBookSuggestions(title, form) {
       : '<p class="book-lookup-loading">No results found.</p>';
     return;
   }
-  renderBookSuggestions(items.slice(0, 5), form, sugEl);
+  sugEl._allItems = items;
+  sugEl._shownCount = 0;
+  sugEl._weakMatch = !!items._weakMatch;
+  showMoreBookSuggestions(form);
+}
+
+// Renders the next unshown batch of already-fetched suggestions (5 at a
+// time). Previously "None of these" just hid the suggestion box, silently
+// discarding the remaining fetched-but-unshown results (fetchBookSuggestions
+// requests 10 but only ever rendered the first 5) — clicking it now reveals
+// the next batch instead, and only falls back to actually hiding the box
+// once every fetched item has been shown.
+function showMoreBookSuggestions(form) {
+  const sugEl = document.getElementById(_sugElId(form));
+  if (!sugEl || !sugEl._allItems) return;
+  const start = sugEl._shownCount || 0;
+  const batch = sugEl._allItems.slice(start, start + 5);
+  if (batch.length === 0) { sugEl.classList.add('hidden'); return; }
+  sugEl._shownCount = start + batch.length;
+  renderBookSuggestions(batch, form, sugEl);
 }
 
 function renderBookSuggestions(items, form, sugEl) {
@@ -1267,8 +1286,20 @@ function renderBookSuggestions(items, form, sugEl) {
       </div>
     </div>`;
   }).join('');
-  sugEl.innerHTML = cards +
-    `<button type="button" class="book-sug-none" onclick="document.getElementById('${_sugElId(form)}').classList.add('hidden')">None of these</button>`;
+  const hasMore = sugEl._allItems && sugEl._shownCount < sugEl._allItems.length;
+  const noneBtn = hasMore
+    ? `<button type="button" class="book-sug-none" onclick="showMoreBookSuggestions('${form}')">None of these — show more</button>`
+    : `<button type="button" class="book-sug-none" onclick="document.getElementById('${_sugElId(form)}').classList.add('hidden')">None of these</button>`;
+  // Google's search has no wildcard/prefix operator, so a still-incomplete
+  // single word can only ever be matched against exact/coincidental hits
+  // (e.g. "rebec" the bowed instrument, while typing "Rebecca") — these
+  // results are shown (they might genuinely be right), but flagged with a
+  // hint that finishing the word is likely to surface a better match,
+  // rather than presenting them as if they were confidently correct.
+  const nudge = sugEl._weakMatch
+    ? `<p class="book-lookup-loading">Keep typing for a more precise match.</p>`
+    : '';
+  sugEl.innerHTML = nudge + cards + noneBtn;
   sugEl._suggestions = items.map(item => ({
     title:    item.title || '',
     author:   (item.author_name || []).join(', '),
@@ -2225,10 +2256,23 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
       const bThumb = b.r.thumb ? 0 : 1;
       if (aThumb !== bThumb) return aThumb - bThumb;
       return a.i - b.i; // stable within a tier
-    })
-    .map(x => x.r);
+    });
+  // Google's search has no wildcard/prefix operator, so for a single-word
+  // query none of these results can ever be PROVEN to include the book the
+  // user is still mid-typing toward — they're only ever a plausible guess.
+  // If even the very best-ranked result is merely an exact/coincidental
+  // match to the fragment itself (tier 2+, i.e. no title was found that
+  // plausibly CONTINUES past it — tier 0/1), that's a strong signal these
+  // are likely unrelated real words/titles that happen to equal the
+  // fragment (e.g. "rebec", the bowed instrument, while the user is still
+  // typing "Rebecca") rather than the intended book. Flag this so callers
+  // can show a "keep typing" nudge alongside the results instead of
+  // presenting them as a confident final answer.
+  const weakMatch = isSingleWord && results.length > 0 && results[0].t >= 2;
+  results = results.map(x => x.r);
   results = results.slice(0, maxResults);
   if (results.length === 0 && isSingleWord) results._incomplete = true;
+  if (weakMatch) results._weakMatch = true;
   return results;
 }
 
