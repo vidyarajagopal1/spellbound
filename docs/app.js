@@ -2051,6 +2051,21 @@ function _dedupeTitleKey(title) {
   return normalizeBookQuery((title || '').replace(EDITION_NOISE_PATTERN, ' ')).toLowerCase();
 }
 
+// Honorific/title words that some catalog editions prepend/append to an
+// author's name ("Dame Daphne Du Maurier", "Daphne Du Maurier, Dame",
+// "Daphne Dame Du Maurier") — stripped as whole words, position-independent,
+// before computing the author half of a dedup key, so these all normalize
+// to the same key regardless of where/whether the honorific appears.
+const AUTHOR_HONORIFICS = new Set(['dame','sir','lord','lady','dr','prof','professor','rev','reverend','hon','honorable']);
+
+function _dedupeAuthorKey(author) {
+  return normalizeBookQuery(author || '')
+    .toLowerCase()
+    .split(' ')
+    .filter(w => w && !AUTHOR_HONORIFICS.has(w))
+    .join(' ');
+}
+
 // Collapses duplicate editions of the same book. Key = a cleaned main title
 // (edition/format noise stripped via _dedupeTitleKey, NOT the raw title —
 // see EDITION_NOISE_PATTERN) + first author, both lowercased. When two
@@ -2060,7 +2075,7 @@ function _dedupeTitleKey(title) {
 function _dedupeBookResults(results) {
   const seen = new Map();
   for (const r of results) {
-    const key = _dedupeTitleKey(r.title) + '|' + (r.author_name[0] || '').toLowerCase();
+    const key = _dedupeTitleKey(r.title) + '|' + _dedupeAuthorKey(r.author_name[0]);
     const existing = seen.get(key);
     if (!existing) {
       seen.set(key, r);
@@ -2206,7 +2221,7 @@ async function _openLibraryEditionCounts(query, timeout = 3000) {
     const data = await res.json();
     const map = new Map();
     for (const d of (data.docs || [])) {
-      const key = _dedupeTitleKey(d.title) + '|' + ((d.author_name || [])[0] || '').toLowerCase();
+      const key = _dedupeTitleKey(d.title) + '|' + _dedupeAuthorKey((d.author_name || [])[0]);
       const count = d.edition_count || 0;
       if (!map.has(key) || map.get(key) < count) map.set(key, count);
     }
@@ -2341,8 +2356,8 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
       // null otherwise). ratingsCount remains the fallback/secondary
       // tiebreak for whatever olMap doesn't recognize or when it's absent.
       if (olMap) {
-        const aKey = _dedupeTitleKey(a.r.title) + '|' + (a.r.author_name[0] || '').toLowerCase();
-        const bKey = _dedupeTitleKey(b.r.title) + '|' + (b.r.author_name[0] || '').toLowerCase();
+        const aKey = _dedupeTitleKey(a.r.title) + '|' + _dedupeAuthorKey(a.r.author_name[0]);
+        const bKey = _dedupeTitleKey(b.r.title) + '|' + _dedupeAuthorKey(b.r.author_name[0]);
         const aEd = olMap.get(aKey) || 0;
         const bEd = olMap.get(bKey) || 0;
         if (aEd !== bEd) return bEd - aEd;
