@@ -1976,8 +1976,15 @@ function normalizeBookQuery(s) {
     .trim();
 }
 
+// Titles/subtitles matching this are companion material (study guides,
+// summaries, discussion guides, etc.) rather than the actual book itself —
+// dropped from all search results everywhere, never the real work.
+const STUDY_GUIDE_PATTERN = /\b(study guide|summary (?:of|and|&)|summary\s*[:\-]|analysis of|discussion guide|book club guide|cliffs?notes|sparknotes|study aid|companion guide|unofficial guide)\b/i;
+
 // Maps a raw Google Books API response into the app's normalized result
 // shape. Shared by googleBooksSearch and googleBooksIncrementalSearch.
+// Also applies two cross-cutting filters here (so every caller gets them
+// for free): English-only, and drops study-guide/summary companion books.
 function _mapGoogleBooksItems(data) {
   return (data.items || []).map(it => {
     const v = it.volumeInfo || {};
@@ -1988,9 +1995,16 @@ function _mapGoogleBooksItems(data) {
       author_name: v.authors || [],
       subject:     v.categories || [],
       description: v.description || '',
+      language:    v.language || '',
       thumb:       (v.imageLinks?.thumbnail || '').replace(/^http:/, 'https:')
     };
-  }).filter(r => r.title);
+  })
+    .filter(r => r.title)
+    // langRestrict on the request biases results but doesn't strictly
+    // guarantee it, so also filter client-side. Missing language metadata
+    // is kept rather than dropped (some legit entries omit it).
+    .filter(r => !r.language || r.language === 'en')
+    .filter(r => !STUDY_GUIDE_PATTERN.test(r.fullTitle) && !(r.subject || []).some(c => /study aids/i.test(c)));
 }
 
 // Collapses duplicate editions of the same book. Key = normalized main
@@ -2018,7 +2032,7 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, author =
   let q = field ? `${field}:"${cleaned}"` : query;
   if (field && cleanedAuthor) q += ` inauthor:"${cleanedAuthor}"`;
   const runQuery = async (q) => {
-    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=${maxResults}${await gbApiKeyParam()}`;
+    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&printType=books&langRestrict=en&maxResults=${maxResults}${await gbApiKeyParam()}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
@@ -2125,19 +2139,33 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
   if (_gbIncrementalCache.key === sendWords) {
     items = _gbIncrementalCache.items;
   } else {
-    const fields = encodeURIComponent('items(volumeInfo(title,subtitle,authors,categories,imageLinks))');
-    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(`intitle:"${sendWords}"`)}&printType=books&maxResults=30&fields=${fields}${await gbApiKeyParam()}`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-    try {
-      const res = await fetch(url, { signal: controller.signal });
-      if (!res.ok) return null;
-      const data = await res.json();
-      items = _mapGoogleBooksItems(data);
-    } catch {
-      return null;
-    } finally {
-      clearTimeout(timer);
+    const fields = encodeURIComponent('items(volumeInfo(title,subtitle,authors,categories,imageLinks,language))');
+    const fetchOnce = async (qParam) => {
+      const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(qParam)}&printType=books&langRestrict=en&maxResults=30&fields=${fields}${await gbApiKeyParam()}`;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeout);
+      try {
+        const res = await fetch(url, { signal: controller.signal });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return _mapGoogleBooksItems(data);
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    items = await fetchOnce(`intitle:"${sendWords}"`);
+    if (items === null) return null;
+    // Google's intitle: field operator only matches whole tokens, so a
+    // still-being-typed single word can structurally never match above (see
+    // note below). Fall back to a plain, unrestricted keyword query (no
+    // field operator, no quotes) — Google's general q= search tolerates
+    // partial/prefix input far better than intitle: does — then keep
+    // applying the same local substring filter as normal.
+    if (isSingleWord && items.length === 0 && sendWords.length >= 4) {
+      const fallback = await fetchOnce(sendWords);
+      if (fallback !== null) items = fallback;
     }
     _gbIncrementalCache = { key: sendWords, items };
   }
