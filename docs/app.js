@@ -1358,12 +1358,23 @@ function _findExistingBookByTitle(title) {
 // Runs when the title field loses focus, and when a lookup suggestion fills
 // it. Yes: discard the in-progress form and open the existing book instead.
 // No: dismiss and leave everything the reader typed untouched.
+let _addBookDupMatch = null;
+
 function checkAddBookDuplicate(title) {
   if (title === _lastAddBookDupCheckTitle) return;
   _lastAddBookDupCheckTitle = title;
   const match = _findExistingBookByTitle(title);
   if (!match) return;
-  if (!confirm(`Did you mean ${match.title}?`)) return;
+  _addBookDupMatch = match;
+  document.getElementById('add-book-dup-question').textContent = `Did you mean ${match.title}?`;
+  document.getElementById('add-book-dup-modal').classList.remove('hidden');
+}
+
+function confirmAddBookDuplicate(yes) {
+  document.getElementById('add-book-dup-modal').classList.add('hidden');
+  const match = _addBookDupMatch;
+  _addBookDupMatch = null;
+  if (!yes || !match) return;
   hideForm();
   ['book-title-input','book-author-input','book-notes-input','book-aftertaste-input','book-date-completed-input'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('book-status-input').value   = 'Reading';
