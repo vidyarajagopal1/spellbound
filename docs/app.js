@@ -1320,6 +1320,7 @@ function applyBookSuggestion(index, form) {
       document.getElementById('book-category-input').value = s.category;
       toggleAddBookFields();
     }
+    checkAddBookDuplicate(s.title.trim());
   } else if (form === 'wishlist') {
     document.getElementById('wishlist-title-input').value  = s.title;
     document.getElementById('wishlist-author-input').value = s.author;
@@ -1338,6 +1339,49 @@ function applyBookSuggestion(index, form) {
 }
 
 // ─── ADD BOOK ─────────────────────────────────────────────────────────────────
+// Holds the last title value the manual Add Book duplicate check has already
+// run against, so it never re-runs for the same value (e.g. the reader
+// tabbing back into the field without changing it).
+let _lastAddBookDupCheckTitle = null;
+
+// Given a title, returns the library book whose _grNormalizeTitle matches
+// (lowest id wins if more than one matches), or null. Used only by the
+// manual Add Book form's duplicate check below.
+function _findExistingBookByTitle(title) {
+  const norm = _grNormalizeTitle(title);
+  const matches = books.filter(b => _grNormalizeTitle(b.title) === norm);
+  if (matches.length === 0) return null;
+  return matches.reduce((lowest, b) => b.id < lowest.id ? b : lowest);
+}
+
+// "Did you mean an existing book?" check for the manual Add Book form only.
+// Runs when the title field loses focus, and when a lookup suggestion fills
+// it. Yes: discard the in-progress form and open the existing book instead.
+// No: dismiss and leave everything the reader typed untouched.
+function checkAddBookDuplicate(title) {
+  if (title === _lastAddBookDupCheckTitle) return;
+  _lastAddBookDupCheckTitle = title;
+  const match = _findExistingBookByTitle(title);
+  if (!match) return;
+  if (!confirm(`Did you mean ${match.title}?`)) return;
+  hideForm();
+  ['book-title-input','book-author-input','book-notes-input','book-aftertaste-input','book-date-completed-input'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('book-status-input').value   = 'Reading';
+  document.getElementById('book-category-input').value = 'Escape';
+  document.getElementById('add-book-completion-fields').style.display = 'none';
+  setMediumBtn('#add-book-medium-group', '');
+  setRatingBtn('#add-book-rating-group', '');
+  openBook(match.id);
+}
+
+// Deferred so a tap on a book-lookup suggestion card registers (and runs its
+// own check via applyBookSuggestion) before this blur-triggered check fires.
+function handleAddBookTitleBlur() {
+  setTimeout(() => {
+    checkAddBookDuplicate(document.getElementById('book-title-input').value.trim());
+  }, 200);
+}
+
 function showAddBookForm() {
   _categoryManualAdd = false;
   document.getElementById('add-book-suggestions').classList.add('hidden');
