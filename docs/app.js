@@ -1672,8 +1672,10 @@ function applyBookSuggestion(index, form) {
 let _lastAddBookDupCheckTitle = null;
 
 // Given a title, returns the library book whose _grNormalizeTitle matches
-// (lowest id wins if more than one matches), or null. Used only by the
-// manual Add Book form's duplicate check below.
+// (lowest id wins if more than one matches), or null. Used by the manual Add
+// Book form's duplicate check below, and by _questCreateBookFromSearchResult
+// (Quest stages / Find Your Next Read) to avoid silently creating a second
+// entry for a book that's already in the library.
 function _findExistingBookByTitle(title) {
   const norm = _grNormalizeTitle(title);
   const matches = books.filter(b => _grNormalizeTitle(b.title) === norm);
@@ -1684,8 +1686,19 @@ function _findExistingBookByTitle(title) {
 // "Did you mean an existing book?" check for the manual Add Book form only.
 // Runs when the title field loses focus, and when a lookup suggestion fills
 // it. Yes: discard the in-progress form and open the existing book instead.
-// No: dismiss and leave everything the reader typed untouched.
+// No: dismiss and leave everything the reader typed untouched. This is only
+// a soft nudge — it does NOT block Add Book from creating a duplicate if the
+// reader ignores it (e.g. submits via Enter before blur fires). The actual
+// guard against that is the separate, non-skippable check in addBook() below.
 let _addBookDupMatch = null;
+// The in-progress book object staged by addBook()'s hard submit-time guard
+// while the "Did you mean X?" modal is up, so confirmAddBookDuplicate()'s
+// "No" path can finish the save. Null unless that guard is actively showing.
+let _pendingAddBookSubmit = null;
+// Normalized title the reader has already confirmed is intentionally a new,
+// separate entry (via the dup-modal's "No"), so addBook() doesn't nag again
+// for the same title within this Add Book session. Reset in showAddBookForm().
+let _addBookDupConfirmedNewTitle = null;
 
 function checkAddBookDuplicate(title) {
   if (title === _lastAddBookDupCheckTitle) return;
@@ -1699,17 +1712,30 @@ function checkAddBookDuplicate(title) {
 
 function confirmAddBookDuplicate(yes) {
   document.getElementById('add-book-dup-modal').classList.add('hidden');
-  const match = _addBookDupMatch;
-  _addBookDupMatch = null;
-  if (!yes || !match) return;
-  hideForm();
-  ['book-title-input','book-author-input','book-notes-input','book-aftertaste-input','book-date-completed-input'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('book-status-input').value   = 'Reading';
-  document.getElementById('book-category-input').value = 'Escape';
-  document.getElementById('add-book-completion-fields').style.display = 'none';
-  setMediumBtn('#add-book-medium-group', '');
-  setRatingBtn('#add-book-rating-group', '');
-  openBook(match.id);
+  const match          = _addBookDupMatch;
+  const pendingSubmit  = _pendingAddBookSubmit;
+  _addBookDupMatch      = null;
+  _pendingAddBookSubmit = null;
+  if (yes && match) {
+    hideForm();
+    ['book-title-input','book-author-input','book-notes-input','book-aftertaste-input','book-date-completed-input'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('book-status-input').value   = 'Reading';
+    document.getElementById('book-category-input').value = 'Escape';
+    document.getElementById('add-book-completion-fields').style.display = 'none';
+    setMediumBtn('#add-book-medium-group', '');
+    setRatingBtn('#add-book-rating-group', '');
+    openBook(match.id);
+    return;
+  }
+  // "No" — the reader is confirming this really is a separate, new entry
+  // (e.g. a different edition/format under the same title). Remember that so
+  // the submit-time check below doesn't nag again for the same title if the
+  // blur nudge already asked and was dismissed this way.
+  if (match) _addBookDupConfirmedNewTitle = _grNormalizeTitle(match.title);
+  // If this modal was raised by addBook()'s hard submit-time check (as
+  // opposed to the softer blur-time nudge, which never stashes a pending
+  // book), finish the save the reader was actually trying to make.
+  if (pendingSubmit) _saveNewBook(pendingSubmit);
 }
 
 // Deferred so a tap on a book-lookup suggestion card registers (and runs its
@@ -1722,6 +1748,8 @@ function handleAddBookTitleBlur() {
 
 function showAddBookForm() {
   _categoryManualAdd = false;
+  _lastAddBookDupCheckTitle    = null;
+  _addBookDupConfirmedNewTitle = null;
   document.getElementById('add-book-suggestions').classList.add('hidden');
   document.getElementById('add-book-form').classList.remove('hidden');
   document.getElementById('add-book-form').style.display = 'flex';
@@ -1764,6 +1792,27 @@ async function addBook(event) {
     updatedAt:          new Date().toISOString(),
     source:             'manual',
   };
+  // Hard, non-skippable duplicate guard — separate from the softer blur-time
+  // nudge above, which the reader can bypass entirely (e.g. submitting via
+  // Enter before the field ever loses focus). Skipped only if this exact
+  // title was already confirmed as intentionally-new via that nudge's "No".
+  const norm = _grNormalizeTitle(book.title);
+  const match = norm === _addBookDupConfirmedNewTitle ? null : _findExistingBookByTitle(book.title);
+  if (match) {
+    _addBookDupMatch      = match;
+    _pendingAddBookSubmit = book;
+    document.getElementById('add-book-dup-question').textContent = `Did you mean ${match.title}?`;
+    document.getElementById('add-book-dup-modal').classList.remove('hidden');
+    return;
+  }
+  await _saveNewBook(book);
+}
+
+// Actually writes a new book to IndexedDB and resets the Add Book form. Split
+// out from addBook() so confirmAddBookDuplicate()'s "No, this is a genuinely
+// new entry" path can finish the save after the duplicate check has already
+// run once, without re-running it.
+async function _saveNewBook(book) {
   await dbPut('books', book);
   hideForm();
   ['book-title-input','book-author-input','book-notes-input','book-aftertaste-input','book-date-completed-input'].forEach(id => document.getElementById(id).value = '');
@@ -5878,6 +5927,13 @@ async function questStage1SelectImported(bookId) {
 }
 
 async function _questCreateBookFromSearchResult(item, status) {
+  // Unlike the manual Add Book form, none of Quest's search-add flows (or
+  // Find Your Next Read's "Add a few more") ever confirm with the reader —
+  // they add instantly on tap. So this check is silent and non-interrupting:
+  // if the title's already in the library, just reuse that book instead of
+  // creating a second row for it.
+  const existing = _findExistingBookByTitle(item.title || '');
+  if (existing) return existing;
   const book = {
     id:            nextId(books),
     title:         item.title || '',
