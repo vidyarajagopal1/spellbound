@@ -33,7 +33,6 @@ let _cachedDriveFileId   = undefined; // undefined = not yet resolved this sessi
 let _cachedRemoteCount   = null;      // last known books+highlights count of the remote file, or null if not yet known this session
 let _authState           = 'unknown'; // 'unknown' | 'signed-in' | 'signed-out'
 let _pendingOfflineEdit  = false;     // an edit happened while auth state was still 'unknown'
-let _offlineReminderShownThisSession = false;
 let _resolveInitialLoad;
 // Resolves once boot()'s initial openDB()+loadData() has completed. gapiLoaded/
 // gisLoaded fire from their own <script onload> attributes with no ordering
@@ -219,10 +218,9 @@ async function saveAndSync() {
 }
 
 // Shows a dismissible "changes are only local" pop-up. Triggered from the
-// auth-state machine below — at most once per page-load session.
+// auth-state machine below — shown every time an edit is made while offline
+// or signed out, not just once per session.
 function _showOfflineReminder(message) {
-  if (_offlineReminderShownThisSession) return;
-  _offlineReminderShownThisSession = true;
   const el   = document.getElementById('offline-reminder-modal');
   const text = document.getElementById('offline-reminder-text');
   if (!el || !text) return;
@@ -246,7 +244,7 @@ function _setAuthState(newState) {
     _pendingOfflineEdit = false;
   } else if (newState === 'signed-out' && _pendingOfflineEdit) {
     _pendingOfflineEdit = false;
-    _showOfflineReminder("You're offline or not signed in. Changes you make are only saved on this device until you're back online and signed in with Google.");
+    _showOfflineReminder('Sign in to save your changes.');
   }
 }
 
@@ -585,7 +583,7 @@ async function syncToDrive() {
     // signed-out reminder is decided. See _setAuthState for the deferred
     // ('unknown' -> resolved) half of this logic.
     if (_authState === 'signed-out') {
-      _showOfflineReminder("You're offline or not signed in. Changes you make are only saved on this device until you're back online and signed in with Google.");
+      _showOfflineReminder('Sign in to save your changes.');
     } else if (_authState === 'unknown') {
       _pendingOfflineEdit = true;
     }
