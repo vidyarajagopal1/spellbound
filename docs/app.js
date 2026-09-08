@@ -22,9 +22,11 @@ let gisReady       = false;
 let tokenClient;
 const GOOGLE_SIGNIN_FLAG_KEY = 'spellbound_google_signed_in';
 const DRIVE_BACKUP_PREFIX    = 'spellbound-data-backup-';
+const SILENT_SIGNIN_TIMEOUT_MS = 8000; // if a silent (prompt:'') token request never calls back at all (seen with blocked third-party cookies etc.), stop waiting after this long
 let _tokenExpiresAt      = 0;     // epoch ms; 0 = no token / unknown expiry yet
 let _tokenRefreshPromise = null;  // in-flight silent refresh, deduped across callers
 let _pendingTokenResolve = null;  // resolves whichever call is awaiting the in-flight refresh
+let _silentSigninTimeoutId = null; // watchdog for the currently-outstanding silent request, if any
 let _initialSyncDone     = false; // true only once the push-vs-pull decision has actually SUCCEEDED once
 let _initialSyncPromise  = null;  // the decision's in-flight promise, deduped across concurrent token callbacks
 let _cachedDriveFileId   = undefined; // undefined = not yet resolved this session; null = resolved, no file exists yet; string = known id
@@ -267,12 +269,35 @@ function gisLoaded() {
   maybeInitSync();
 }
 
+// Fires tokenClient.requestAccessToken({ prompt: '' }) (a SILENT request —
+// never use this for an interactive prompt:'consent' request, which can
+// legitimately take a while as the user clicks through a popup) guarded by a
+// watchdog timer. GIS's silent flow can, in some browsers/privacy settings
+// (blocked third-party cookies, tracking protection, etc.), simply never
+// invoke the callback at all — no success, no error. Without this guard that
+// leaves the UI stuck on "Signing in…" forever and, worse, permanently wedges
+// _ensureFreshToken's dedup promise so no future sync ever runs again this
+// session. If the real callback hasn't arrived within SILENT_SIGNIN_TIMEOUT_MS,
+// synthesize an error response through the normal error path.
+function _requestSilentToken() {
+  if (_silentSigninTimeoutId) clearTimeout(_silentSigninTimeoutId);
+  _silentSigninTimeoutId = setTimeout(() => {
+    _silentSigninTimeoutId = null;
+    _handleTokenResponse({ error: 'silent_signin_timeout' });
+  }, SILENT_SIGNIN_TIMEOUT_MS);
+  tokenClient.requestAccessToken({ prompt: '' });
+}
+
 // Single shared callback for every token grant, whether it comes from the
 // silent auto sign-in on load, a silent refresh triggered by _ensureFreshToken,
 // or an interactive tap on the sync-status indicator. Resolves whichever
 // caller is currently awaiting a refresh (if any), and — until it has
 // actually SUCCEEDED once — decides push-vs-pull on every successful grant.
 async function _handleTokenResponse(resp) {
+  // A real response (success or error) has arrived, so any outstanding
+  // silent-request watchdog is no longer needed — including when THIS very
+  // call IS the watchdog's own synthetic timeout firing.
+  if (_silentSigninTimeoutId) { clearTimeout(_silentSigninTimeoutId); _silentSigninTimeoutId = null; }
   const resolvePending = _pendingTokenResolve;
   _pendingTokenResolve = null;
   if (resp.error) {
@@ -360,7 +385,7 @@ async function _ensureFreshToken() {
   if (_tokenRefreshPromise) return _tokenRefreshPromise;
   _tokenRefreshPromise = new Promise(resolve => {
     _pendingTokenResolve = resolve;
-    tokenClient.requestAccessToken({ prompt: '' });
+    _requestSilentToken();
   }).finally(() => { _tokenRefreshPromise = null; });
   return _tokenRefreshPromise;
 }
@@ -374,7 +399,7 @@ function maybeInitSync() {
   if (!gapiReady || !gisReady) return;
   if (localStorage.getItem(GOOGLE_SIGNIN_FLAG_KEY) === '1') {
     updateSyncStatus('Signing in…');
-    tokenClient.requestAccessToken({ prompt: '' });
+    _requestSilentToken();
   } else {
     setLoggedInUI(false);
     updateSyncStatus('Tap to sign in with Google ↗', true);
