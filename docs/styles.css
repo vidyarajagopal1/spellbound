@@ -167,9 +167,11 @@ main { min-height: 100%; }
   margin-top: 1.2rem;
 }
 #reading-books  { margin-bottom: 1.25rem; border-radius: var(--radius); padding: 1rem; border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.02); }
+#reading-trail  { margin-bottom: 1.25rem; }
 .home-bottom    { display: flex; flex-direction: column; gap: 1.25rem; }
 #dog-eared,
-#waitlisted-books {
+#waitlisted-books,
+#reading-trail {
   border-radius: var(--radius);
   padding: 1rem;
   border: 1px solid rgba(255,255,255,0.07);
@@ -177,7 +179,8 @@ main { min-height: 100%; }
 }
 #reading-books .home-section-title,
 #waitlisted-books .home-section-title,
-#dog-eared .home-section-title {
+#dog-eared .home-section-title,
+#reading-trail .home-section-title {
   margin-top: 0;
 }
 

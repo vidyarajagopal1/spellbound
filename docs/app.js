@@ -1272,6 +1272,15 @@ function spellNum(n) { return SPELL[n] ?? n; }
 async function loadHome() {
   const readingBooks    = books.filter(b => b.status === 'Reading');
   const waitlistedBooks = books.filter(b => b.status === 'Queued Up');
+  const trailBooks = books
+    .filter(b => b.status === 'Completed')
+    .sort((a, b) => {
+      if (!a.dateCompleted && !b.dateCompleted) return 0;
+      if (!a.dateCompleted) return 1;
+      if (!b.dateCompleted) return -1;
+      return b.dateCompleted.localeCompare(a.dateCompleted);
+    })
+    .slice(0, 5);
 
   const hour     = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -1298,6 +1307,21 @@ async function loadHome() {
             ${b.rating && RATING_LABELS[b.rating] ? `<span class="book-cover-rating">${RATING_LABELS[b.rating].icon}</span>` : ''}
           </div>`).join('')}</div>`) +
     `<button class="home-outline-btn" onclick="showAddHighlightForm()">Add Highlight</button>`;
+
+  document.getElementById('reading-trail').innerHTML =
+    '<h2 class="home-section-title">Your Reading Trail</h2>' +
+    (trailBooks.length === 0
+      ? '<p class="home-empty">A record of the last few books you\'ve read.</p>'
+      : `<div class="home-covers">${trailBooks.map(b =>
+          `<div class="book-cover" onclick="openBook(${b.id})" style="background-color:${getCoverColor(b.category)}">
+            <div class="book-cover-spine"></div>
+            <div class="book-cover-body">
+              <h3 class="book-cover-title">${escapeHtml(b.title)}</h3>
+              <p class="book-cover-category">${escapeHtml(b.category)}</p>
+            </div>
+            ${getMediumIcon(b.medium) ? `<span class="book-cover-medium">${getMediumIcon(b.medium)}</span>` : ''}
+            ${b.rating && RATING_LABELS[b.rating] ? `<span class="book-cover-rating">${RATING_LABELS[b.rating].icon}</span>` : ''}
+          </div>`).join('')}</div>`);
 
   renderDogEared();
 
