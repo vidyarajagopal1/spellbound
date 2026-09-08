@@ -1280,7 +1280,7 @@ async function loadHome() {
       if (!b.dateCompleted) return -1;
       return b.dateCompleted.localeCompare(a.dateCompleted);
     })
-    .slice(0, 5);
+    .slice(0, 3);
 
   const hour     = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
