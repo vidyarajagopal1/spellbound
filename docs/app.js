@@ -31,6 +31,7 @@ let _initialSyncDone     = false; // true only once the push-vs-pull decision ha
 let _initialSyncPromise  = null;  // the decision's in-flight promise, deduped across concurrent token callbacks
 let _cachedDriveFileId   = undefined; // undefined = not yet resolved this session; null = resolved, no file exists yet; string = known id
 let _cachedRemoteCount   = null;      // last known books+highlights count of the remote file, or null if not yet known this session
+let _cachedRemoteModifiedTime = undefined; // undefined = no baseline yet this session; string = modifiedTime observed on the last successful staleness check or push this session — see syncToDrive()'s staleness guard
 let _authState           = 'unknown'; // 'unknown' | 'signed-in' | 'signed-out'
 let _pendingOfflineEdit  = false;     // an edit happened while auth state was still 'unknown'
 let _resolveInitialLoad;
@@ -459,16 +460,48 @@ async function _resolveDriveFileId() {
   return _cachedDriveFileId;
 }
 
+// Fetches just the modifiedTime field for a Drive file (metadata only, no
+// content) — used by syncToDrive()'s staleness guard right before every push,
+// so it needs to be cheap and can't itself be session-cached the way
+// _resolveDriveFileId is (the whole point is to see whether it has changed).
+async function _getDriveFileModifiedTime(fileId) {
+  const res = await gapi.client.request({
+    path:   `https://www.googleapis.com/drive/v3/files/${fileId}`,
+    method: 'GET',
+    params: { fields: 'modifiedTime' }
+  });
+  return res.result.modifiedTime || null;
+}
+
 async function _driveMultipartRequest(method, fileId, metaObj, payloadString) {
   const boundary = 'spellbound_boundary_' + Date.now() + '_' + Math.random().toString(36).slice(2);
   const body     = `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(metaObj)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${payloadString}\r\n--${boundary}--`;
   return gapi.client.request({
     path:    `https://www.googleapis.com/upload/drive/v3/files${fileId ? '/' + fileId : ''}`,
     method,
-    params:  { uploadType: 'multipart', fields: 'id' },
+    params:  { uploadType: 'multipart', fields: 'id,modifiedTime' },
     headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
     body,
   });
+}
+
+// Shown when syncToDrive()'s staleness guard detects the Drive file's
+// modifiedTime moved since this session last observed it (another tab or
+// device wrote to it in the meantime). Nothing has been written by this
+// session's push attempt at that point, so local data is always untouched —
+// this is purely informational, with a one-click way to pick up the newer copy.
+function _showDriveStaleNotice() {
+  const el = document.getElementById('drive-stale-modal');
+  if (el) el.classList.remove('hidden');
+}
+
+function closeDriveStaleNotice() {
+  const el = document.getElementById('drive-stale-modal');
+  if (el) el.classList.add('hidden');
+}
+
+function reloadForDriveStale() {
+  location.reload();
 }
 
 // Before overwriting the primary Drive file with a payload that has FEWER
@@ -604,20 +637,40 @@ async function syncToDrive() {
     const payload   = JSON.stringify({ books, highlights, essays, wishlist, challenges, waitlistOrder, wishlistOrder, essay_drafts });
     const newCount  = books.length + highlights.length;
     const fileId    = await _resolveDriveFileId();
-    if (fileId) await _backupDriveFileIfShrinking(fileId, newCount);
+    if (fileId) {
+      // Staleness guard: compare the file's CURRENT modifiedTime against the
+      // one this session last observed (from a prior check or a prior
+      // successful push here). A mismatch means something else — another
+      // tab, another device — wrote to the file since then. Abort rather
+      // than blindly overwriting; nothing has been written yet at this
+      // point, so local data is untouched either way. If this session has no
+      // baseline yet (first push this session), there's nothing to compare
+      // against, so just adopt the current value as the baseline and let
+      // this push proceed.
+      const currentModifiedTime = await _getDriveFileModifiedTime(fileId);
+      if (_cachedRemoteModifiedTime !== undefined && currentModifiedTime !== _cachedRemoteModifiedTime) {
+        _showDriveStaleNotice();
+        return false;
+      }
+      if (_cachedRemoteModifiedTime === undefined) _cachedRemoteModifiedTime = currentModifiedTime;
+      await _backupDriveFileIfShrinking(fileId, newCount);
+    }
     const method  = fileId ? 'PATCH' : 'POST';
     const metaObj = fileId ? { name: DRIVE_FILE_NAME } : { name: DRIVE_FILE_NAME, parents: ['appDataFolder'] };
     const res = await _driveMultipartRequest(method, fileId, metaObj, payload);
     if (!fileId && res.result && res.result.id) _cachedDriveFileId = res.result.id;
     _cachedRemoteCount = newCount;
+    if (res.result && res.result.modifiedTime) _cachedRemoteModifiedTime = res.result.modifiedTime;
     updateSyncStatus('Saved ' + new Date().toLocaleTimeString());
     return true;
   } catch (err) {
     // Uncertain what state Drive is actually in after a failed write — drop
-    // the cached file id/remote count so the next attempt re-resolves both
-    // from scratch instead of trusting possibly-stale in-memory state.
+    // the cached file id/remote count/modifiedTime baseline so the next
+    // attempt re-resolves all three from scratch instead of trusting
+    // possibly-stale in-memory state.
     _cachedDriveFileId = undefined;
     _cachedRemoteCount = null;
+    _cachedRemoteModifiedTime = undefined;
     updateSyncStatus('Save failed', true);
     console.error('syncToDrive error', err);
     return false;
