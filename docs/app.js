@@ -401,8 +401,17 @@ function maybeInitSync() {
     updateSyncStatus('Signing in…');
     _requestSilentToken();
   } else {
+    // No remembered sign-in on this browser at all — this is NOT ambiguous
+    // (unlike a pending silent-refresh attempt, which might still resolve to
+    // signed-in), so resolve _authState immediately instead of leaving it at
+    // 'unknown'. Previously this branch only updated the UI text and left
+    // _authState to be resolved by boot()'s 5-second fallback timer, which
+    // meant an edit made in the first 5 seconds after load (or on a
+    // throttled/backgrounded tab where that timer is delayed) could silently
+    // swallow the offline/signed-out reminder instead of showing it.
     setLoggedInUI(false);
     updateSyncStatus('Tap to sign in with Google ↗', true);
+    _setAuthState('signed-out');
   }
 }
 
