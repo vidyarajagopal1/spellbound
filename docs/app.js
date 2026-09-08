@@ -779,6 +779,14 @@ function _grParseDate(str) {
   return `${y}-${pad(m)}-${pad(d)}`;
 }
 
+// Parses the Goodreads "My Rating" column (0-5, 0 = unrated) into this app's
+// grRating field: 1-5 stars, or null when unrated/missing. Distinct from -
+// and never written into - Spellbound's own four-level `rating` field.
+function _grParseRating(str) {
+  const n = parseInt((str || '').trim(), 10);
+  return (n >= 1 && n <= 5) ? n : null;
+}
+
 // Normalises text for duplicate matching: straightens curly quotes/apostrophes,
 // collapses repeated whitespace, and lowercases.
 function _grNormalizeMatch(str) {
@@ -854,6 +862,7 @@ async function handleGoodreadsFile(event) {
       .replace(/<[^>]+>/g, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
+    const grRating = _grParseRating(_grField(row, ['My Rating', 'my_rating']));
 
     if (!title) continue;
 
@@ -866,7 +875,7 @@ async function handleGoodreadsFile(event) {
       toWishlist.push({ title, author });
     } else {
       if (existingBookTitles.has(normTitle))     { skipped.push(title); continue; }
-      toBooks.push({ title, author, status, dateRead, dateAdded, review });
+      toBooks.push({ title, author, status, dateRead, dateAdded, review, grRating });
     }
   }
 
@@ -1025,6 +1034,7 @@ async function confirmGoodreadsImport() {
       category:     b.category || '',
       medium:       '',
       rating:       '',
+      grRating:     b.grRating,
       notes:        b.review || '',
       aftertaste:   '',
       favouriteCharacter: '',
@@ -4115,7 +4125,17 @@ function _fnrBuildUserContext() {
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
 
-  return { topRatedBooks, pausedBooks, medium, densityTop5 };
+  // Books imported from Goodreads with a high star rating (4-5) that aren't
+  // already covered by the top-rated block above — a weaker signal since it
+  // predates this app and isn't the reader's own four-level rating.
+  const topRatedIds = new Set(topRated.map(b => b.id));
+  const importedRatedBooks = books
+    .filter(b => (b.grRating === 4 || b.grRating === 5) && !topRatedIds.has(b.id))
+    .sort((a, b) => b.grRating - a.grRating)
+    .slice(0, 20)
+    .map(b => ({ title: b.title, author: b.author || '', category: b.category, stars: b.grRating }));
+
+  return { topRatedBooks, pausedBooks, medium, densityTop5, importedRatedBooks };
 }
 
 function _fnrSerializeContext(ctx) {
@@ -4128,6 +4148,10 @@ function _fnrSerializeContext(ctx) {
       if (b.why_it_stayed.length) s += `\n  What resonated: ${b.why_it_stayed.map(w => `"${w}"`).join('; ')}`;
       lines.push(s);
     });
+  }
+  if (ctx.importedRatedBooks.length) {
+    lines.push('\nBOOKS RATED 4-5 STARS ON GOODREADS AT IMPORT (weaker signal than the reader\'s own ratings above — imported, not rated in this app):');
+    ctx.importedRatedBooks.forEach(b => lines.push(`- "${b.title}"${b.author ? ` by ${b.author}` : ''}${b.category ? ` (${b.category})` : ''} — ${b.stars} stars`));
   }
   if (ctx.pausedBooks.length) {
     lines.push('\nBOOKS THEY ABANDONED (use as negative signal — avoid similar):');
