@@ -316,6 +316,23 @@ async function _handleTokenResponse(resp) {
         // local -> Drive, so re-authenticating (silent refresh or a fresh
         // manual sign-in) can never clobber edits made locally while
         // offline/signed-out.
+        if (localCount > 0) {
+          // syncToDrive() builds its payload from the in-memory arrays, not
+          // from IndexedDB directly — normally loadData() keeps them in sync
+          // with the stores, but boot() now continues even if loadData()
+          // fails (see its try/finally), which can leave the stores holding
+          // records while the in-memory arrays are still empty. Pushing in
+          // that state would overwrite the Drive copy with an empty
+          // payload. Cross-check the two counts and skip (leaving the
+          // decision for the next token grant) if they disagree, same as
+          // the count-failure path above.
+          const inMemoryCount = books.length + highlights.length + essays.length +
+                                 wishlist.length + challenges.length;
+          if (inMemoryCount !== localCount) {
+            console.error(`In-memory record count (${inMemoryCount}) disagrees with IndexedDB count (${localCount}), skipping this attempt`);
+            return;
+          }
+        }
         const success = localCount > 0 ? await syncToDrive() : await syncFromDrive();
         // Only mark the decision done once it actually succeeds — on a flaky
         // connection the push/pull can fail, and if we marked it done
@@ -546,6 +563,12 @@ async function syncToDrive() {
     const waitlistOrder = await dbGetMeta('waitlist-order') || [];
     const wishlistOrder = await dbGetMeta('wishlist-order') || [];
     const essay_drafts  = await dbGetAll('essay_drafts');
+    // NOTE (later cleanup, not urgent): this payload is built from the
+    // in-memory arrays (books/highlights/etc.), which are only kept in sync
+    // with IndexedDB by loadData(). Building it from dbGetAll() for each
+    // store instead would remove this whole class of in-memory-vs-IndexedDB
+    // mismatch (see the cross-check against _localRecordCount in
+    // _handleTokenResponse, which exists only because of this gap).
     const payload   = JSON.stringify({ books, highlights, essays, wishlist, challenges, waitlistOrder, wishlistOrder, essay_drafts });
     const newCount  = books.length + highlights.length;
     const fileId    = await _resolveDriveFileId();
