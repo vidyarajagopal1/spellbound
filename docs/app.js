@@ -20,6 +20,24 @@ let challenges         = [];
 let gapiReady      = false;
 let gisReady       = false;
 let tokenClient;
+const GOOGLE_SIGNIN_FLAG_KEY = 'spellbound_google_signed_in';
+const DRIVE_BACKUP_PREFIX    = 'spellbound-data-backup-';
+let _tokenExpiresAt      = 0;     // epoch ms; 0 = no token / unknown expiry yet
+let _tokenRefreshPromise = null;  // in-flight silent refresh, deduped across callers
+let _pendingTokenResolve = null;  // resolves whichever call is awaiting the in-flight refresh
+let _initialSyncDone     = false; // true only once the push-vs-pull decision has actually SUCCEEDED once
+let _initialSyncPromise  = null;  // the decision's in-flight promise, deduped across concurrent token callbacks
+let _cachedDriveFileId   = undefined; // undefined = not yet resolved this session; null = resolved, no file exists yet; string = known id
+let _cachedRemoteCount   = null;      // last known books+highlights count of the remote file, or null if not yet known this session
+let _authState           = 'unknown'; // 'unknown' | 'signed-in' | 'signed-out'
+let _pendingOfflineEdit  = false;     // an edit happened while auth state was still 'unknown'
+let _offlineReminderShownThisSession = false;
+let _resolveInitialLoad;
+// Resolves once boot()'s initial openDB()+loadData() has completed. gapiLoaded/
+// gisLoaded fire from their own <script onload> attributes with no ordering
+// guarantee relative to boot(), so any code that syncs with Drive must await
+// this first or it can race the initial local-data load.
+const _initialLoadPromise = new Promise(resolve => { _resolveInitialLoad = resolve; });
 
 // ─── INDEXEDDB ────────────────────────────────────────────────────────────────
 let db;
@@ -74,6 +92,15 @@ function dbClear(store) {
     const tx  = db.transaction(store, 'readwrite');
     const req = tx.objectStore(store).clear();
     req.onsuccess = () => resolve();
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+function dbCount(store) {
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).count();
+    req.onsuccess = () => resolve(req.result);
     req.onerror   = () => reject(req.error);
   });
 }
@@ -173,9 +200,52 @@ async function loadData() {
   challenges = await dbGetAll('challenges');
 }
 
+// Authoritative "does this device have any local records?" check, read
+// directly from IndexedDB rather than the in-memory arrays above — those are
+// only populated once boot()'s loadData() has run, and the sign-in flow can
+// resolve before that happens.
+async function _localRecordCount() {
+  const counts = await Promise.all(
+    ['books', 'highlights', 'essays', 'wishlist', 'challenges'].map(dbCount)
+  );
+  return counts.reduce((a, b) => a + b, 0);
+}
+
 async function saveAndSync() {
   await loadData();
   syncToDrive().catch(() => {});
+}
+
+// Shows a dismissible "changes are only local" pop-up. Triggered from the
+// auth-state machine below — at most once per page-load session.
+function _showOfflineReminder(message) {
+  if (_offlineReminderShownThisSession) return;
+  _offlineReminderShownThisSession = true;
+  const el   = document.getElementById('offline-reminder-modal');
+  const text = document.getElementById('offline-reminder-text');
+  if (!el || !text) return;
+  text.textContent = message;
+  el.classList.remove('hidden');
+}
+
+function closeOfflineReminder() {
+  const el = document.getElementById('offline-reminder-modal');
+  if (el) el.classList.add('hidden');
+}
+
+// Three-state auth machine: 'unknown' (not yet resolved either way),
+// 'signed-in', 'signed-out'. An edit attempted while 'unknown' just sets
+// _pendingOfflineEdit and shows nothing (see syncToDrive's early return); once
+// the state resolves, that pending edit either surfaces the reminder
+// (resolved signed-out) or is silently forgotten (resolved signed-in).
+function _setAuthState(newState) {
+  _authState = newState;
+  if (newState === 'signed-in') {
+    _pendingOfflineEdit = false;
+  } else if (newState === 'signed-out' && _pendingOfflineEdit) {
+    _pendingOfflineEdit = false;
+    _showOfflineReminder("You're offline or not signed in. Changes you make are only saved on this device until you're back online and signed in with Google.");
+  }
 }
 
 // ─── GOOGLE DRIVE SYNC ────────────────────────────────────────────────────────
@@ -191,29 +261,124 @@ function gisLoaded() {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
     scope:     DRIVE_SCOPE,
-    callback:  '',
+    callback:  _handleTokenResponse,
   });
   gisReady = true;
   maybeInitSync();
 }
 
+// Single shared callback for every token grant, whether it comes from the
+// silent auto sign-in on load, a silent refresh triggered by _ensureFreshToken,
+// or an interactive tap on the sync-status indicator. Resolves whichever
+// caller is currently awaiting a refresh (if any), and — until it has
+// actually SUCCEEDED once — decides push-vs-pull on every successful grant.
+async function _handleTokenResponse(resp) {
+  const resolvePending = _pendingTokenResolve;
+  _pendingTokenResolve = null;
+  if (resp.error) {
+    localStorage.removeItem(GOOGLE_SIGNIN_FLAG_KEY);
+    setLoggedInUI(false);
+    updateSyncStatus('Tap to sign in with Google ↗', true);
+    _setAuthState('signed-out');
+    if (resolvePending) resolvePending();
+    return;
+  }
+  gapi.client.setToken({ access_token: resp.access_token });
+  _tokenExpiresAt = Date.now() + (resp.expires_in || 3600) * 1000;
+  localStorage.setItem(GOOGLE_SIGNIN_FLAG_KEY, '1');
+  setLoggedInUI(true);
+  _setAuthState('signed-in');
+  if (!_initialSyncDone) {
+    // Deduped: if a decision is already in flight (e.g. a near-simultaneous
+    // manual sign-in tap and a background refresh both granted a token),
+    // every caller just awaits the same promise instead of racing two
+    // independent push-or-pull decisions.
+    if (!_initialSyncPromise) {
+      _initialSyncPromise = (async () => {
+        // No sync in either direction may run until boot()'s initial local
+        // load has completed, and the emptiness check must come from
+        // IndexedDB directly (not the in-memory arrays, which may not be
+        // populated yet if this callback resolves before that load finishes).
+        await _initialLoadPromise;
+        let localCount;
+        try {
+          localCount = await _localRecordCount();
+        } catch (err) {
+          // syncFromDrive() clears every local store before repopulating —
+          // if we can't even confirm this device HAS local data, falling
+          // through to a pull could destroy it. Do nothing and leave the
+          // decision for the next token grant.
+          console.error('_localRecordCount failed, skipping this attempt', err);
+          return;
+        }
+        // Only pull-and-overwrite from Drive when this device has no local
+        // records yet (fresh install/first sign-in). Otherwise always push
+        // local -> Drive, so re-authenticating (silent refresh or a fresh
+        // manual sign-in) can never clobber edits made locally while
+        // offline/signed-out.
+        const success = localCount > 0 ? await syncToDrive() : await syncFromDrive();
+        // Only mark the decision done once it actually succeeds — on a flaky
+        // connection the push/pull can fail, and if we marked it done
+        // anyway, a fresh device would never get its restore-from-Drive
+        // pull attempted again this session.
+        if (success) _initialSyncDone = true;
+      })().finally(() => { _initialSyncPromise = null; });
+    }
+    await _initialSyncPromise;
+  }
+  if (resolvePending) resolvePending();
+}
+
+// Refreshes the access token if it's missing or within 60s of expiring.
+// Called right before any real sync attempt (see syncToDrive/syncFromDrive)
+// and on visibilitychange when the tab becomes visible again — NOT on a
+// setTimeout, since backgrounded mobile tabs (notably Safari) suspend timers,
+// so a refresh scheduled ahead of time may simply never fire. Concurrent
+// calls are deduped onto the same in-flight promise.
+async function _ensureFreshToken() {
+  if (localStorage.getItem(GOOGLE_SIGNIN_FLAG_KEY) !== '1') return;
+  if (_initialSyncPromise) return; // an initial-decision handshake is already in flight; let it resolve on its own rather than racing it with a second requestAccessToken call
+  if (!gisReady) return;
+  if (gapi.client.getToken() && Date.now() < _tokenExpiresAt - 60000) return;
+  if (_tokenRefreshPromise) return _tokenRefreshPromise;
+  _tokenRefreshPromise = new Promise(resolve => {
+    _pendingTokenResolve = resolve;
+    tokenClient.requestAccessToken({ prompt: '' });
+  }).finally(() => { _tokenRefreshPromise = null; });
+  return _tokenRefreshPromise;
+}
+
+function setLoggedInUI(isSignedIn) {
+  const btn = document.getElementById('logout-btn');
+  if (btn) btn.classList.toggle('hidden', !isSignedIn);
+}
+
 function maybeInitSync() {
   if (!gapiReady || !gisReady) return;
-  updateSyncStatus('Tap to sign in with Google ↗', true);
-  tokenClient.callback = async resp => {
-    if (resp.error) { updateSyncStatus('Tap to sign in with Google ↗', true); return; }
-    gapi.client.setToken({ access_token: resp.access_token });
-    await syncFromDrive();
-  };
+  if (localStorage.getItem(GOOGLE_SIGNIN_FLAG_KEY) === '1') {
+    updateSyncStatus('Signing in…');
+    tokenClient.requestAccessToken({ prompt: '' });
+  } else {
+    setLoggedInUI(false);
+    updateSyncStatus('Tap to sign in with Google ↗', true);
+  }
 }
 
 function signIn() {
-  tokenClient.callback = async resp => {
-    if (resp.error) { updateSyncStatus('Sign-in failed', true); return; }
-    gapi.client.setToken({ access_token: resp.access_token });
-    await syncFromDrive();
-  };
   tokenClient.requestAccessToken({ prompt: 'consent' });
+}
+
+function signOutOfGoogle() {
+  const token = gapi.client.getToken();
+  if (token && token.access_token && google.accounts.oauth2.revoke) {
+    google.accounts.oauth2.revoke(token.access_token, () => {});
+  }
+  gapi.client.setToken(null);
+  _tokenExpiresAt = 0;
+  localStorage.removeItem(GOOGLE_SIGNIN_FLAG_KEY);
+  setLoggedInUI(false);
+  updateSyncStatus('Tap to sign in with Google ↗', true);
+  _setAuthState('signed-out');
 }
 
 function updateSyncStatus(msg, isError) {
@@ -233,13 +398,103 @@ async function getDriveFileId() {
   return files.length > 0 ? files[0] : null;
 }
 
+// Session-cached lookup: the raw Drive "which file id is this" list-request
+// is only ever made once per session (or again after a write failure, which
+// clears the cache — see syncToDrive's catch block) instead of on every save,
+// since 22+ write paths funnel through syncToDrive/syncFromDrive and none of
+// them need a fresh answer if nothing has failed since the last one.
+async function _resolveDriveFileId() {
+  if (_cachedDriveFileId !== undefined) return _cachedDriveFileId;
+  const file = await getDriveFileId();
+  _cachedDriveFileId = file ? file.id : null;
+  return _cachedDriveFileId;
+}
+
+async function _driveMultipartRequest(method, fileId, metaObj, payloadString) {
+  const boundary = 'spellbound_boundary_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+  const body     = `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(metaObj)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${payloadString}\r\n--${boundary}--`;
+  return gapi.client.request({
+    path:    `https://www.googleapis.com/upload/drive/v3/files${fileId ? '/' + fileId : ''}`,
+    method,
+    params:  { uploadType: 'multipart', fields: 'id' },
+    headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body,
+  });
+}
+
+// Before overwriting the primary Drive file with a payload that has FEWER
+// books+highlights than what's already stored there, copy the existing file
+// to a separate timestamped file in appDataFolder first, then prune down to
+// the 2 most recent backups. A single shrinking write has no history and no
+// per-record timestamps to rebuild from, so without the backup a bad local
+// state (or a mis-timed sync) can permanently destroy the only copy; without
+// the prune, backups would accumulate against Drive quota forever, since a
+// shrink is routine (e.g. deleting one book), not exceptional. Uses the
+// in-memory _cachedRemoteCount instead of always re-fetching the existing
+// file's content, to avoid a second Drive GET on every save — only fetches
+// when that cache is empty (first write this session, or after a previous
+// write failure invalidated it). Fails open — a failed backup/check never
+// blocks the actual save.
+async function _backupDriveFileIfShrinking(fileId, newCount) {
+  try {
+    let existingCount = _cachedRemoteCount;
+    let existingPayloadString = null;
+    if (existingCount === null) {
+      const res = await gapi.client.request({
+        path:   `https://www.googleapis.com/drive/v3/files/${fileId}`,
+        method: 'GET',
+        params: { alt: 'media' }
+      });
+      existingPayloadString = typeof res.result === 'string' ? res.result : JSON.stringify(res.result);
+      const existingData = typeof res.result === 'string' ? JSON.parse(res.result) : res.result;
+      existingCount = (existingData.books || []).length + (existingData.highlights || []).length;
+    }
+    if (newCount >= existingCount) return;
+    if (existingPayloadString === null) {
+      // Count came from cache, so we still need the actual bytes to copy.
+      const res = await gapi.client.request({
+        path:   `https://www.googleapis.com/drive/v3/files/${fileId}`,
+        method: 'GET',
+        params: { alt: 'media' }
+      });
+      existingPayloadString = typeof res.result === 'string' ? res.result : JSON.stringify(res.result);
+    }
+    const backupName = `${DRIVE_BACKUP_PREFIX}${Date.now()}.json`;
+    await _driveMultipartRequest('POST', null, { name: backupName, parents: ['appDataFolder'] }, existingPayloadString);
+    await _pruneOldDriveBackups();
+  } catch (err) {
+    console.error('Drive pre-write backup check failed', err);
+  }
+}
+
+// Keeps only the 2 most recently created backup files in appDataFolder,
+// deleting anything older. Fails open — a failed prune never blocks saving.
+async function _pruneOldDriveBackups() {
+  try {
+    const res = await gapi.client.request({
+      path:   'https://www.googleapis.com/drive/v3/files',
+      method: 'GET',
+      params: { spaces: 'appDataFolder', q: `name contains '${DRIVE_BACKUP_PREFIX}'`, fields: 'files(id,createdTime)', orderBy: 'createdTime desc' }
+    });
+    const stale = (res.result.files || []).slice(2);
+    for (const f of stale) {
+      await gapi.client.request({ path: `https://www.googleapis.com/drive/v3/files/${f.id}`, method: 'DELETE' });
+    }
+  } catch (err) {
+    console.error('Drive backup prune failed', err);
+  }
+}
+
+
 async function syncFromDrive() {
+  await _initialLoadPromise;
+  await _ensureFreshToken();
   updateSyncStatus('Syncing…');
   try {
-    const file = await getDriveFileId();
-    if (file) {
+    const fileId = await _resolveDriveFileId();
+    if (fileId) {
       const res  = await gapi.client.request({
-        path:   `https://www.googleapis.com/drive/v3/files/${file.id}`,
+        path:   `https://www.googleapis.com/drive/v3/files/${fileId}`,
         method: 'GET',
         params: { alt: 'media' }
       });
@@ -260,40 +515,57 @@ async function syncFromDrive() {
       if (data.wishlistOrder) await dbSetMeta('wishlist-order', data.wishlistOrder);
       await loadData();
       refreshCurrentView();
+      _cachedRemoteCount = (data.books || []).length + (data.highlights || []).length;
       updateSyncStatus('Synced ' + new Date().toLocaleTimeString());
+      return true;
     } else {
-      await syncToDrive();
+      return await syncToDrive();
     }
   } catch (err) {
     updateSyncStatus('Sync failed', true);
     console.error('syncFromDrive error', err);
+    return false;
   }
 }
 
 async function syncToDrive() {
-  if (!gapiReady || !gapi.client.getToken()) return;
+  if (!gapiReady || !gapi.client.getToken()) {
+    // Every write path bottoms out here, so this is where the offline/
+    // signed-out reminder is decided. See _setAuthState for the deferred
+    // ('unknown' -> resolved) half of this logic.
+    if (_authState === 'signed-out') {
+      _showOfflineReminder("You're offline or not signed in. Changes you make are only saved on this device until you're back online and signed in with Google.");
+    } else if (_authState === 'unknown') {
+      _pendingOfflineEdit = true;
+    }
+    return false;
+  }
+  await _initialLoadPromise;
+  await _ensureFreshToken();
   try {
     const waitlistOrder = await dbGetMeta('waitlist-order') || [];
     const wishlistOrder = await dbGetMeta('wishlist-order') || [];
     const essay_drafts  = await dbGetAll('essay_drafts');
-    const payload  = JSON.stringify({ books, highlights, essays, wishlist, challenges, waitlistOrder, wishlistOrder, essay_drafts });
-    const file     = await getDriveFileId();
-    const method   = file ? 'PATCH' : 'POST';
-    const fileId   = file ? `/${file.id}` : '';
-    const metaObj  = file ? { name: DRIVE_FILE_NAME } : { name: DRIVE_FILE_NAME, parents: ['appDataFolder'] };
-    const boundary = 'spellbound_boundary';
-    const body     = `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(metaObj)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${payload}\r\n--${boundary}--`;
-    await gapi.client.request({
-      path:    `https://www.googleapis.com/upload/drive/v3/files${fileId}`,
-      method,
-      params:  { uploadType: 'multipart' },
-      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
-      body,
-    });
+    const payload   = JSON.stringify({ books, highlights, essays, wishlist, challenges, waitlistOrder, wishlistOrder, essay_drafts });
+    const newCount  = books.length + highlights.length;
+    const fileId    = await _resolveDriveFileId();
+    if (fileId) await _backupDriveFileIfShrinking(fileId, newCount);
+    const method  = fileId ? 'PATCH' : 'POST';
+    const metaObj = fileId ? { name: DRIVE_FILE_NAME } : { name: DRIVE_FILE_NAME, parents: ['appDataFolder'] };
+    const res = await _driveMultipartRequest(method, fileId, metaObj, payload);
+    if (!fileId && res.result && res.result.id) _cachedDriveFileId = res.result.id;
+    _cachedRemoteCount = newCount;
     updateSyncStatus('Saved ' + new Date().toLocaleTimeString());
+    return true;
   } catch (err) {
+    // Uncertain what state Drive is actually in after a failed write — drop
+    // the cached file id/remote count so the next attempt re-resolves both
+    // from scratch instead of trusting possibly-stale in-memory state.
+    _cachedDriveFileId = undefined;
+    _cachedRemoteCount = null;
     updateSyncStatus('Save failed', true);
     console.error('syncToDrive error', err);
+    return false;
   }
 }
 
@@ -6351,8 +6623,20 @@ function renderQuestPile() {
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 async function boot() {
-  await openDB();
-  await loadData();
+  try {
+    await openDB();
+    await loadData();
+  } catch (err) {
+    // _initialLoadPromise is a hard gate on every sync path (syncToDrive/
+    // syncFromDrive/_handleTokenResponse all await it) — it must resolve no
+    // matter what, or a broken IndexedDB open/load leaves every sync hung
+    // forever with no visible error. The old `if (db) await loadData()`
+    // guard tolerated this; that guard is gone now, so this try/finally is
+    // what takes over that job.
+    console.error('Initial local load failed', err);
+  } finally {
+    _resolveInitialLoad();
+  }
   initializeForms();
   initVoice();
   showView('home');
@@ -6361,6 +6645,19 @@ async function boot() {
     const combobox = document.getElementById('book-combobox');
     if (combobox && !combobox.contains(e.target)) _closeBookDropdown();
   });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      _ensureFreshToken().catch(() => {});
+    }
+  });
+  // Offline case: if the Google scripts never load at all (or never resolve),
+  // gapiLoaded/gisLoaded/maybeInitSync never fire and no token callback ever
+  // runs, so _authState would otherwise sit at 'unknown' forever. Force it to
+  // 'signed-out' after a short grace period so a pending edit's reminder can
+  // still surface.
+  setTimeout(() => {
+    if (_authState === 'unknown') _setAuthState('signed-out');
+  }, 5000);
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(console.error);
   }

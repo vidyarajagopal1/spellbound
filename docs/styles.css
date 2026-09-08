@@ -76,6 +76,24 @@ body {
 .sync-status.sync-ok    { color: #4caf50; }
 .sync-status.sync-error { color: var(--accent); }
 .sync-status:active { background: rgba(255,255,255,0.1); }
+.logout-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px 7px;
+  border-radius: 8px;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s, background 0.15s;
+}
+.logout-btn.hidden { display: none; }
+.logout-btn:active,
+.logout-btn:hover {
+  color: var(--accent);
+  background: rgba(255,255,255,0.07);
+}
 
 /* ─── BOTTOM NAV ────────────────────────────────────────────────────────────── */
 .bottom-nav {
