@@ -796,4 +796,84 @@ A full restyle inspired by an outside ad's typography/contrast treatment, planne
 - **v155 (Phase 1)**: Flipped the entire quest overlay from the app's dark theme to a light/cream theme, scoped entirely to `#quest-overlay` so the rest of the app (including the shared Build Essay overlay) is untouched. Book spine colours were explicitly preserved — they encode the five Spellbound categories and are shared with the Books tab pile, so contrast against the new light background was fixed by keeping the pile shelf and intro pseudo-shelf as dark trays behind the spines, never by altering the spines themselves. Added a fade-out transition on quest close so the handoff from the light quest back to the dark app reads as intentional
 - **v156**: Fixed a bug where the FNR intermission screen (added in v154) rendered on top of the still-visible persistent pile shelf from Stage 7, making it look like a broken sub-page rather than its own moment — the pile shelf/added-count are now explicitly hidden when the intermission renders. Shipped Phase 2 of the redesign: the intro and Stage 7/FNR-handoff headings (only these two "bookend" moments, never the numbered question stages) were split at their own existing commas into a bold dark line + an italic accent-colored line, echoing the reference ad's mixed-weight headline style — no copy was added, reworded, or reordered, only re-wrapped in markup. A third phase (an ad-style "skip this / pick this" comparison list) was proposed and then explicitly dropped at the user's direction, as it read as a sales device out of place mid-onboarding and risked violating quest-copy.md's voice rules
 
+## Incremental Type-Ahead Search (v157–v161)
+
+Replaced debounced-on-blur book title lookups with a live, as-you-type autocomplete search shared by every title-lookup surface in the app (Add Book, Edit Book, Wishlist, Find Your Next Read reference book).
+
+- **v157**: `googleBooksIncrementalSearch()` added — fires on every keystroke instead of only on blur, deduping near-identical titles across editions
+- **v158**: performance pass — trimmed the `fields=` response allowlist down to only what's rendered, and cached responses per query string so repeated keystrokes (e.g. backspace-then-retype) don't refetch
+- **v159**: quoted the `intitle:` query for precision, skipped firing the request entirely for stopword-only fragments (e.g. "the", "a"), and unified every form's lookup (Add Book/Edit Book/Wishlist) onto this one incremental search function instead of each having its own separate debounce logic
+- **v160**: added a proper debounce, dimmed (rather than blanked) the previous results while a new request is in flight, added a stale-response guard so a slow earlier request can no longer clobber a faster later one, and reserved layout space for the results so the page doesn't jump as they arrive
+- **v161**: raised the minimum search length to 4 characters, distinguished "too short to search yet" from a genuine "no results" state, and cleared the stale query stamp once a suggestion is selected so the next fresh search isn't blocked by an old dedupe key
+
+## Rating/Medium Button Selected-State Contrast (v162–v169)
+
+A run of iterative fixes for the "active" state of the Kindle/Audiobook/Physical and rating toggle buttons being invisible or low-contrast on phone screens, ending in a genuine CSS specificity bug rather than another color tweak.
+
+- **v162**: fixed a fully invisible selected state on the medium buttons for Add/Edit Book
+- **v163–v168**: six iterative contrast passes — solid fill, then a glow ring, then a unified surface2-fill + inset accent2 cue + checkmark treatment, then simplified back to solid fill only, then lightened for phone screens, then flipped to a cream fill with dark text
+- **v169 (root cause)**: none of the color changes in v163–168 were actually the problem — a pre-existing, more specific selector, `.form button[type="button"]` (specificity `0,2,1`), was silently beating `.rating-btn.active`/`.medium-btn.active` (specificity `0,2,0`) for the exact background/color properties being tuned, so each visual change in the prior six versions could win or lose depending on unrelated markup elsewhere in the same form. Fixed by raising the real selector's specificity just enough to beat the interloper, instead of reaching for `!important` or rewriting the shared generic rule
+
+## Google Books Search Quality (v170–v178)
+
+A sequence of fixes to Google Books-backed search (used by Add Book/Edit Book/Wishlist lookup, and Quest/Find Your Next Read), triggered by reports of irrelevant, non-English, or duplicate-edition results.
+
+- **v170**: English-only filtering (`langRestrict=en` + a client-side language check), a study-guide/summary exclusion filter (drops "SparkNotes"-style entries), and a fix for a single-word search failing to surface an obvious near-complete title
+- **v171–v172**: two rounds fixing the single-word fallback's ranking — the first attempt (v171) added a fragment-continuation-aware tiering scheme but gated it behind a condition that, on inspection (v172), never actually triggered in practice; fixed by applying the new tiering unconditionally and always merging in a broader secondary query for single-word input
+- **v173**: fixed a real, unrelated "None of these" pagination bug (the button silently discarded 5 already-fetched results instead of showing them), and added an honest "Keep typing for a more precise match" hint for the small number of genuinely ambiguous short fragments where no amount of re-ranking can help, since the underlying Google Books API has no wildcard/prefix operator
+- **v174**: added a `ratingsCount`-based popularity tiebreak so obscure, equally-text-matching titles stop beating famous ones on ties, plus a title-cleaning dedupe key so different editions of the same book (e.g. "Rebecca" vs "Rebecca: A Novel") collapse into one result
+- **v175**: added Open Library `edition_count` as a stronger, less sparse popularity signal than Google's `ratingsCount`, fetched concurrently so it adds no extra latency
+- **v176**: found and fixed the actual root cause behind v174/v175 appearing to do nothing — an exact title match was, by a leftover v171 rule, ranked *below* a "continuation" heuristic meant for incomplete fragments, so a full, correct search like "rebecca" could still lose to noise. Reordered so an exact match is always the top tier
+- **v177**: fixed a dedupe miss caused by author-name variants (e.g. an author's honorific "Dame" appearing in different positions across editions) producing different dedupe keys for the same book
+- **v178**: tightened the English-only filter — entries with no language tag at all were previously kept by default and could let an untagged non-English edition slip through; now only explicitly `en`-tagged entries pass
+
+## Add Book Duplicate Detection — Soft Nudge (v179–v180)
+
+- **v179**: added a "Did you mean an existing book?" check to the manual Add Book form, triggered when the title field loses focus (or a lookup suggestion is applied) and matches a book already in the library
+- **v180**: replaced the initial native browser `confirm()` dialog with a proper in-app Yes/No modal matching the rest of the app's confirmation-modal pattern
+
+## Google Sign-in Persistence, Drive Sync Hardening & Duplicate Guard (v181–v189)
+
+A sustained hardening pass on Google sign-in and Drive sync, prompted by reports of unexpected sign-outs, lost edits, a stuck "Signing in…" state, and — separately — duplicate library entries.
+
+- **v181**: added persistent silent sign-in on load (remembered via a localStorage flag), a background token-refresh mechanism, an explicit logout button in the header, and a dismissible "you're offline / not signed in" reminder pop-up. Also fixed the actual root cause of "changes not saved": sign-in previously always pulled from Drive and overwrote local data unconditionally; now it only pulls on a genuinely empty (fresh) device, and pushes local data otherwise
+- **v182–v184**: three rounds of race-condition fixes caught in review before v181 ever shipped — gated all sync operations behind the initial local-data load actually completing; replaced the timed token-refresh with an on-demand refresh (a `setTimeout`-based timer doesn't reliably fire in a backgrounded mobile tab); added a pre-write Drive backup whenever a save would shrink the remote record count, pruned to the 2 most recent; introduced a proper three-state auth machine (`unknown`/`signed-in`/`signed-out`) driving the offline reminder instead of a blind timer; and closed a mismatch where the push decision could read an empty in-memory array while IndexedDB genuinely had records, which would have overwritten Drive with an empty payload
+- **v185**: fixed a real "stuck on Signing in…" hang — Google's silent sign-in can, on some browsers/privacy settings, never call back at all; added an 8-second watchdog that synthesizes a sign-in failure if the real callback never arrives
+- **v186**: fixed the offline reminder never appearing for a user who had never signed in before — that code path updated the status text but never resolved the underlying auth state, leaving it stuck relying on an unrelated 5-second fallback timer
+- **v187**: the offline/signed-out reminder now shows on every edit made while offline or signed out (previously once per session), with simplified copy: "Sign in to save your changes."
+- **v188**: fixed duplicate library entries. The manual Add Book form's duplicate check (from v179) was only a soft, skippable nudge — never enforced at actual submit, so pressing Enter before the field lost focus bypassed it entirely; it now has a hard, non-skippable check at submit time. Separately, `_questCreateBookFromSearchResult` (shared by every Quest stage and Find Your Next Read's "Add a few more") had no duplicate checking at all — the actual cause of a reported duplicate — and now silently reuses an existing book instead of creating a second one
+- **v189**: added a staleness guard to the Drive sync push — before overwriting the Drive backup file, compares its current `modifiedTime` against the value this session last observed; if another tab or device changed it in the meantime, the push is aborted (nothing is written, locally or remotely) and a notice offers to reload. This is detection, not merge — closing a gap where two open sessions could silently overwrite each other's saves
+
+---
+
+| Version | Changes |
+|---|---|
+| v137–v151 | First-Run Quest: build (shell, Stages 1–6, FNR handoff, intro/trigger) + rotation-drift pile-shelf fixes |
+| v152–v156 | Quest redesign: transitions/typography, FNR handoff fixes, light theme, bookend headline treatment |
+| v157 | Incremental (as-you-type) title search added for all lookup surfaces |
+| v158 | Incremental search perf: trimmed fields, per-query response cache |
+| v159 | Quoted intitle query, skip stopword-only searches, unified all forms on one incremental search function |
+| v160 | Debounce, dim-instead-of-blank, stale-response guard, reserved results layout |
+| v161 | Min search length raised to 4; distinguished "too short" from "no results"; clear stale query stamp on select |
+| v162 | Fixed invisible medium-button selected state on Add/Edit Book |
+| v163–v168 | Six iterative contrast passes on rating/medium selected state (solid fill → glow ring → unified cue → simplified → lightened → cream/dark flip) |
+| v169 | Root cause found: a more specific pre-existing selector was beating the selected-state rule; fixed via specificity, not another color change |
+| v170 | Google Books: English-only filter, study-guide exclusion, single-word search fix |
+| v171–v172 | Fixed single-word search ranking (fragment-continuation tiering), including a gating bug that made v171 not actually run |
+| v173 | Fixed "None of these" pagination bug; added an honest hint for genuinely ambiguous short-fragment searches |
+| v174 | Added ratingsCount popularity tiebreak + edition-collapsing title dedupe |
+| v175 | Added Open Library edition_count as a stronger popularity signal |
+| v176 | Fixed the real tier-ordering bug making v174/v175 appear to do nothing |
+| v177 | Fixed dedupe missing author-name honorific variants |
+| v178 | Tightened English-only filter to require an explicit 'en' tag |
+| v179 | Added a duplicate-title nudge to the manual Add Book form |
+| v180 | Replaced native `confirm()` with an in-app Yes/No modal for the duplicate nudge |
+| v181 | Persistent silent sign-in, logout button, offline reminder pop-up, fixed sign-in always clobbering local edits |
+| v182–v184 | Sync race-condition hardening: load-gating, on-demand token refresh, shrink-safe Drive backups, three-state auth machine, in-memory/IndexedDB count mismatch guard |
+| v185 | Fixed indefinite "Signing in…" hang via an 8s silent-sign-in watchdog |
+| v186 | Fixed offline reminder never showing for never-signed-in users |
+| v187 | Offline reminder now shows on every offline/signed-out edit, with simplified text |
+| v188 | Fixed duplicate book entries: hard submit-time guard on Add Book; duplicate check added to Quest/Find Your Next Read's search-add |
+| v189 | Added a Drive modifiedTime staleness guard to detect (not merge) another tab/device overwriting a Drive save |
+
 
