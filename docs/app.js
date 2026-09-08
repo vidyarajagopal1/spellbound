@@ -1275,9 +1275,13 @@ async function loadHome() {
 
   const hour     = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const noManualBooks  = !books.some(b => b.source === 'manual');
+  const questCompleted = await dbGetMeta('quest_completed');
+  const showQuestHelp  = noManualBooks && !questCompleted;
   document.getElementById('home-hero').innerHTML =
     `<p class="home-hero-greeting">${greeting}</p>` +
-    `<button class="home-primary-btn" onclick="showAddBookForm()">Add New Book</button>`;
+    `<button class="home-primary-btn" onclick="showAddBookForm()">Add New Book</button>` +
+    (showQuestHelp ? `<button class="home-outline-btn" onclick="openQuest()">Need help setting up?</button>` : '');
 
   document.getElementById('reading-books').innerHTML =
     '<h2 class="home-section-title">Currently Reading</h2>' +
@@ -5752,6 +5756,7 @@ function questGoToStage(stage) {
   if (!_questState) return;
   _questState.stage = stage;
   _saveQuestState();
+  if (stage === 7) dbSetMeta('quest_completed', true);
   renderQuestStage();
 }
 
@@ -5875,11 +5880,14 @@ function _questIntroShelfHtml() {
 }
 
 function _renderQuestStage0(body) {
+  const introSub = _questHasImportedLibrary()
+    ? "Your Goodreads books are in. We'll build a shelf from a few of them, and find your next great read along the way."
+    : "Come on a quest. We'll start with a few books you know, and find your next great read along the way.";
   body.innerHTML = `
     <div class="build-step quest-stage">
       <div class="quest-group">
         <p class="quest-headline"><span class="quest-headline-main">A shelf of your own,</span><span class="quest-headline-accent">waiting to be filled.</span></p>
-        <p class="quest-intro-sub">Come on a quest. We'll start with a few books you know, and find your next great read along the way.</p>
+        <p class="quest-intro-sub">${introSub}</p>
       </div>
       <div class="quest-group">
         <div class="quest-intro-shelf">
@@ -5901,8 +5909,16 @@ let _questSearchTimer = null;
 
 function _questImporterCandidates() {
   return books
-    .filter(b => b.source === 'goodreads' && b.status === 'Completed' && b.dateCompleted)
-    .sort((a, b) => (b.dateCompleted || '').localeCompare(a.dateCompleted || ''))
+    .filter(b => b.source === 'goodreads' && b.status === 'Completed')
+    .sort((a, b) => {
+      // Books without a date sort last; among dated books, most recent first.
+      // No copy claims these are "the most recent" anymore, so this ordering
+      // is a nicety, not a promise.
+      if (!a.dateCompleted && !b.dateCompleted) return 0;
+      if (!a.dateCompleted) return 1;
+      if (!b.dateCompleted) return -1;
+      return b.dateCompleted.localeCompare(a.dateCompleted);
+    })
     .slice(0, 6);
 }
 
@@ -5958,7 +5974,6 @@ function _renderQuestStage1(body) {
 
   const gridSectionHtml = isImporter ? `
       <div class="quest-group">
-        <p class="quest-note-sub">The most recent from your import.</p>
         <div class="quest-spine-list" id="quest-stage1-grid">
           ${gridBooks.map((b, i) => _questSpineOptionHtml(b, i, gridBooks.length, chosen && chosen.id === b.id, `questStage1SelectImported(${b.id})`)).join('')}
         </div>
@@ -5974,7 +5989,7 @@ function _renderQuestStage1(body) {
   body.innerHTML = `
     <div class="build-step quest-stage">
       <div class="quest-group">
-        <p class="build-prompt">${isImporter ? "Which of these did you finish last?" : "What's the last book you finished?"}</p>
+        <p class="build-prompt">What's the last book you finished?</p>
         <p class="build-prompt-small">Don't worry about chronology. The last one you remember works just fine.</p>
       </div>
       ${gridSectionHtml}
@@ -6165,7 +6180,7 @@ function _questStage3GridHtml(candidates, filterValue) {
   const q = (filterValue || '').trim().toLowerCase();
   const filtered = q
     ? candidates.filter(b => (b.title || '').toLowerCase().includes(q) || (b.author || '').toLowerCase().includes(q))
-    : candidates;
+    : candidates.slice(0, 12);
   if (filtered.length === 0) return '<p class="quest-note-sub">No matches in your library.</p>';
   return filtered.map((b, i) => _questSpineOptionHtml(b, i, filtered.length, _questState.rereadIds.includes(b.id), `questStage3ToggleLibraryBook(${b.id})`)).join('');
 }

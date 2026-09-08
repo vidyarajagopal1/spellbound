@@ -22,35 +22,25 @@ Trigger: the app has no books.
 >
 > `Begin the quest →`
 
+**Importer variant.** When the reader's library came from a Goodreads import, the second line becomes:
+
+> Your Goodreads books are in. We'll build a shelf from a few of them, and find your next great read along the way.
+
+Headline, button, and the pseudo-shelf of spines are unchanged.
+
 **Behind the copy:** a pseudo shelf of labelled spines, using the existing spine component with dummy data. Titles must be real, widely known, and spread deliberately across the five Spellbound categories — Escape, Understand, Reflect, Evolve, Question — so the shelf demonstrates range rather than taste. Six to eight spines. Titles are chosen by Vidya, not generated.
 
 ---
 
 ## Stage 1 — Last book
 
-### Non-importer
-
 > **What's the last book you finished?**
 >
 > *Don't worry about chronology. The last one you remember works just fine.*
 >
-> `[ Search for books ]`
-
-### Importer
-
-> **Which of these did you finish last?**
->
-> *Don't worry about chronology. The last one you remember works just fine.*
->
-> *The six most recent from your import.*
->
-> `[ grid of six covers ]`
->
-> *Not here? Search for it.*
+> `[ grid of six covers, and "Not here? Search for it." — both appear only when there are books to show ]`
 >
 > `[ Search for books ]`
-
-### Both
 
 Empty pile, before the first book lands:
 > Your pile starts here
