@@ -7349,8 +7349,8 @@ async function boot() {
     await loadData();
     await _backfillMissingUpdatedAt();
     // No UI for this yet — set via console with dbSetMeta('sync_merge_mode',
-    // 'off'|'dry'|'live') then reload. Defaults to 'dry' when unset.
-    _syncMergeMode = (await dbGetMeta('sync_merge_mode')) || 'dry';
+    // 'off'|'dry'|'live') then reload. Defaults to 'live' when unset.
+    _syncMergeMode = (await dbGetMeta('sync_merge_mode')) || 'live';
   } catch (err) {
     // _initialLoadPromise is a hard gate on every sync path (syncToDrive/
     // syncFromDrive/_handleTokenResponse all await it) — it must resolve no
