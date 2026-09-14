@@ -4235,24 +4235,32 @@ Generate exactly 8 tags for the essay.
 Your task: return exactly 5 book recommendations based on the reader's request below.
 
 MESSAGE STRUCTURE YOU WILL RECEIVE (read in this priority order):
-1. READER'S REQUEST — the reader's explicit, current picks (genre, topic/mood, reference book/author, reading context, what to avoid). This is the PRIMARY signal. Every recommendation must plausibly satisfy it.
+1. READER'S REQUEST — the reader's explicit, current picks (genre, a reference to a book or an author, what they're trying to recreate from it, what to avoid). This is the PRIMARY signal. Every recommendation must plausibly satisfy it.
 2. EXCLUDE LIST — titles you must never recommend, under any circumstance (already owned, wishlisted, or previously rejected by this reader).
 3. TASTE CALIBRATION ONLY — the reader's past ratings/highlights. This is SECONDARY flavor used only to fine-tune tone or style among books that already satisfy the request. It must never override, dilute, or substitute for the request. If the calibration data seems to point somewhere else entirely, ignore it in favor of the explicit request.
 4. VARIETY TOKEN — an internal value that must never be mentioned, explained, or treated as user-visible content.
+
+RESOLVING THE REFERENCE FIELD:
+The reader may name a book or an author in free text, which can be exact, misspelled, a partial or shortened title, or a bare surname. Work through these in order before giving up: an exact match; misspellings and phonetic near-misses; a partial or shortened title; a bare surname. Use the accompanying "what they're trying to recreate" text to disambiguate between candidates when more than one real book or author plausibly fits. Being torn between two plausible real candidates is not grounds for dropping the reference — pick the more likely one and report that reading; the reader sees it and can correct it. This does not loosen the standard for whether a book or author genuinely exists (see rule 7) — try harder to match a real candidate, never accept a less certain one in its place.
+If the text cannot be resolved to a specific real book or author, check whether it still carries usable meaning on its own — a mood, a genre, a scene, or a descriptive phrase. Treat that as intent and let it shape your picks even though nothing is named.
+Only genuinely meaningless input should be discarded entirely — and only ever discard it as a deliberate judgment that it carries no usable meaning, never because you ran out of space or forgot to address it. A missing "resolution" for any other reason wrongly tells the reader their input was never used at all.
+Report what you used in the top-level "resolution" field of your JSON response (see RESPONSE FORMAT) — the title and author if you landed on a specific book, just the name if you landed on an author, or your own paraphrase of the mood/genre/scene/descriptive intent if you couldn't land on a specific book or author but still found something usable. Do not write a full sentence and do not signal which of these three it was — a bare value only; the app builds the sentence shown to the reader.
+Omit "resolution" entirely in exactly two cases: the reference field was left blank, or the text was discarded as genuinely meaningless.
 
 CRITICAL RULES:
 1. Return ONLY valid JSON — no prose, no preamble, no markdown code fences, no commentary outside the JSON.
 2. Return exactly 5 recommendations in the "recommendations" array.
 3. Never recommend a title that appears in the EXCLUDE LIST, in any form (same title, same title+author pair).
-4. Keep variety: do not return near-identical books or more than 2 books by the same author (unless an author is explicitly requested).
+4. Keep variety: do not return near-identical books or more than 2 books by the same author — unless your resolved reference (see above) is itself an author rather than a book, in which case the cap does not apply to that author specifically.
 5. Do not default to extremely famous "canon"/best-of-all-time staples unless they genuinely and specifically satisfy the reader's request — a request for one genre or mood must not be answered with an unrelated famous book just because it's well known.
-6. Each "why_it_fits" must reference at least one specific signal from the READER'S REQUEST. Do not use generic statements, and do not justify a pick using only taste-calibration data if it doesn't also satisfy the request.
+6. Each "why_it_fits" must reference at least one specific signal from the READER'S REQUEST. If nothing in the READER'S REQUEST can be cited specifically, you may instead ground "why_it_fits" in the TASTE CALIBRATION profile — but only by naming a specific book or highlight from it that the pick resonates with, never a generic statement about what the reader "tends to enjoy." The ban on generic, unsupported statements applies either way.
 7. Only recommend real, verifiable books. Author name and first-publication year must be factually correct. If you are not certain a title genuinely exists with that author, do not use it — choose a different, real book you are certain about instead. Never invent a title.
 8. Recency: when nothing in the request signals a preference for older/classic/vintage work, favor including 1–2 more recently published titles (roughly the last several years) among the 5. When the request signals a classic, vintage, or historical preference (e.g. genre is historical fiction, or the reader's text mentions "classic"/"old"/similar), do not force recency — pick what genuinely fits instead.
 9. Use the VARIETY TOKEN only to vary which valid, request-satisfying candidates you surface when there are multiple equally good options — never as a reason to pick something that doesn't fit the request, and never mention it in your output.
 
 RESPONSE FORMAT — return this exact JSON structure:
 {
+  "resolution": "Bare value only — title and author, or an author's name, or a short paraphrase of usable intent. Omit this key entirely if the reference field was blank, or if its text was discarded as meaningless.",
   "recommendations": [
     {
       "title": "Book title",
@@ -4360,19 +4368,8 @@ const FNR_GENRES = [
   { value: 'something_else',     label: 'Something else →' },
 ];
 
-const FNR_CONTEXTS = [
-  { value: 'listen_multitask', label: 'Something I can listen to while doing other things' },
-  { value: 'short_bursts',     label: 'Something for short bursts (commute, between tasks)' },
-  { value: 'night_read',       label: 'A night read I can sink into' },
-  { value: 'slump_buster',     label: 'Something to get me out of a reading slump' },
-  { value: 'break_pattern',    label: 'Something to break my usual pattern' },
-  { value: 'make_think',       label: 'Something that will really make me think' },
-  { value: 'something_else',   label: 'Something else →' },
-];
-
 let _fnrFormState  = null;  // saved when navigating to results; cleared on fresh open
 let _fnrResults    = [];    // current 5 results on screen
-let _fnrSearchTimer = null;
 let _fnrSessionRejected = []; // {title, author} replaced/rejected earlier in this sitting; cleared on fresh open
 let _fnrRejectedSlots   = new Set(); // slot indices currently marked as permanently rejected (dimmed state)
 let _fnrQuestMode = false; // true when opened via the quest's Find Your Next Read handoff (see questHandoffToFNR)
@@ -4419,7 +4416,6 @@ function fnrBackToWishlist() {
 
 function _fnrRenderPills() {
   _fnrRenderPillGroup('fnr-genre-pills',   FNR_GENRES,   3, 'fnr-custom-genre');
-  _fnrRenderPillGroup('fnr-context-pills', FNR_CONTEXTS, 2, 'fnr-custom-context');
 }
 
 function _fnrRenderPillGroup(containerId, items, max, customInputId) {
@@ -4452,19 +4448,11 @@ function fnrTogglePill(btn, containerId, max, customInputId) {
 
 function _fnrSaveFormState() {
   const genreContainer   = document.getElementById('fnr-genre-pills');
-  const contextContainer = document.getElementById('fnr-context-pills');
   _fnrFormState = {
     genres:        [...genreContainer.querySelectorAll('.fnr-pill.active')].map(b => b.dataset.value),
     customGenre:   document.getElementById('fnr-custom-genre').value,
-    topic:         document.getElementById('fnr-topic').value,
-    bookSearch:    document.getElementById('fnr-book-search').value,
-    bookValue:     document.getElementById('fnr-book-value').value,
-    bookNotes:     document.getElementById('fnr-book-notes').value,
-    authorSearch:  document.getElementById('fnr-author-search').value,
-    authorValue:   document.getElementById('fnr-author-value').value,
-    authorNotes:   document.getElementById('fnr-author-notes').value,
-    contexts:      [...contextContainer.querySelectorAll('.fnr-pill.active')].map(b => b.dataset.value),
-    customContext: document.getElementById('fnr-custom-context').value,
+    reference:      document.getElementById('fnr-reference').value,
+    referenceNotes: document.getElementById('fnr-reference-notes').value,
     avoid:         document.getElementById('fnr-avoid').value,
   };
 }
@@ -4475,137 +4463,17 @@ function _fnrRestoreForm() {
   // Re-render pills then apply active states
   _fnrRenderPills();
   const genreContainer   = document.getElementById('fnr-genre-pills');
-  const contextContainer = document.getElementById('fnr-context-pills');
   s.genres.forEach(v => {
     const btn = genreContainer.querySelector(`.fnr-pill[data-value="${v}"]`);
     if (btn) btn.classList.add('active');
   });
-  s.contexts.forEach(v => {
-    const btn = contextContainer.querySelector(`.fnr-pill[data-value="${v}"]`);
-    if (btn) btn.classList.add('active');
-  });
   const customGenreInput   = document.getElementById('fnr-custom-genre');
-  const customContextInput = document.getElementById('fnr-custom-context');
   customGenreInput.value   = s.customGenre;
-  customContextInput.value = s.customContext;
   if (s.genres.includes('something_else'))   customGenreInput.classList.remove('hidden');
-  if (s.contexts.includes('something_else')) customContextInput.classList.remove('hidden');
-  document.getElementById('fnr-topic').value        = s.topic;
-  document.getElementById('fnr-book-search').value  = s.bookSearch;
-  document.getElementById('fnr-book-value').value   = s.bookValue;
-  document.getElementById('fnr-book-notes').value   = s.bookNotes;
-  document.getElementById('fnr-author-search').value = s.authorSearch;
-  document.getElementById('fnr-author-value').value  = s.authorValue;
-  document.getElementById('fnr-author-notes').value  = s.authorNotes;
+  document.getElementById('fnr-reference').value       = s.reference;
+  document.getElementById('fnr-reference-notes').value = s.referenceNotes;
   document.getElementById('fnr-avoid').value         = s.avoid;
 }
-
-// ── Autocomplete ──────────────────────────────────────────────────────────────
-
-function fnrDebouncedBookSearch() {
-  clearTimeout(_fnrSearchTimer);
-  const val = document.getElementById('fnr-book-search').value.trim();
-  document.getElementById('fnr-book-value').value = '';
-  if (val.length < 4) {
-    const sugEl = document.getElementById('fnr-book-suggestions');
-    sugEl.classList.add('hidden');
-    sugEl.classList.remove('search-loading');
-    delete sugEl.dataset.query;
-    return;
-  }
-  _fnrSearchTimer = setTimeout(() => _fnrFetchBooks(val), 500);
-}
-
-function fnrDebouncedAuthorSearch() {
-  clearTimeout(_fnrSearchTimer);
-  const val = document.getElementById('fnr-author-search').value.trim();
-  document.getElementById('fnr-author-value').value = '';
-  if (val.length < 4) {
-    const sugEl = document.getElementById('fnr-author-suggestions');
-    sugEl.classList.add('hidden');
-    sugEl.classList.remove('search-loading');
-    delete sugEl.dataset.query;
-    return;
-  }
-  _fnrSearchTimer = setTimeout(() => _fnrFetchAuthors(val), 500);
-}
-
-async function _fnrFetchBooks(query) {
-  const sugEl = document.getElementById('fnr-book-suggestions');
-  sugEl.classList.remove('hidden');
-  if (sugEl.querySelector('.fnr-suggestion-item')) {
-    sugEl.classList.add('search-loading');
-  } else {
-    sugEl.classList.remove('search-loading');
-    sugEl.innerHTML = '<p class="fnr-lookup-loading">Searching…</p>';
-  }
-  sugEl.dataset.query = query;
-  const results = await googleBooksIncrementalSearch(query, { maxResults: 10 });
-  if (sugEl.dataset.query !== query) return; // a newer keystroke already superseded this request
-  sugEl.classList.remove('search-loading');
-  if (results === null) { sugEl.innerHTML = '<p class="fnr-lookup-loading">Lookup failed.</p>'; return; }
-  const items = results.map(item => ({
-    title:     item.title || '',
-    fullTitle: item.fullTitle || item.title || '',
-    author:    (item.author_name || []).join(', '),
-  })).filter(i => i.title).slice(0, 5);
-  if (!items.length) { sugEl.innerHTML = results._incomplete ? '<p class="fnr-lookup-loading">Keep typing.</p>' : '<p class="fnr-lookup-loading">No results.</p>'; return; }
-  sugEl.innerHTML = items.map(i =>
-    `<div class="fnr-suggestion-item" onclick="fnrSelectBook('${i.title.replace(/'/g,"\\'")}','${i.author.replace(/'/g,"\\'")}')">
-      <span class="fnr-sug-title">${escapeHtml(i.fullTitle)}</span>
-      ${i.author ? `<span class="fnr-sug-author">${escapeHtml(i.author)}</span>` : ''}
-    </div>`).join('');
-}
-
-async function _fnrFetchAuthors(query) {
-  const sugEl = document.getElementById('fnr-author-suggestions');
-  sugEl.classList.remove('hidden');
-  if (sugEl.querySelector('.fnr-suggestion-item')) {
-    sugEl.classList.add('search-loading');
-  } else {
-    sugEl.classList.remove('search-loading');
-    sugEl.innerHTML = '<p class="fnr-lookup-loading">Searching…</p>';
-  }
-  sugEl.dataset.query = query;
-  const results = await googleBooksSearch(query, { maxResults: 8, field: 'inauthor' });
-  if (sugEl.dataset.query !== query) return; // a newer keystroke already superseded this request
-  sugEl.classList.remove('search-loading');
-  if (results === null) { sugEl.innerHTML = '<p class="fnr-lookup-loading">Lookup failed.</p>'; return; }
-  const nq = normalizeBookQuery(query).toLowerCase();
-  const authors = [...new Set(
-    results
-      .flatMap(item => item.author_name || [])
-      .filter(a => normalizeBookQuery(a).toLowerCase().includes(nq))
-  )].slice(0, 5);
-  if (!authors.length) { sugEl.innerHTML = '<p class="fnr-lookup-loading">No results.</p>'; return; }
-  sugEl.innerHTML = authors.map(a =>
-    `<div class="fnr-suggestion-item" onclick="fnrSelectAuthor('${a.replace(/'/g,"\\'")}')">
-      <span class="fnr-sug-title">${escapeHtml(a)}</span>
-    </div>`).join('');
-}
-
-function fnrSelectBook(title, author) {
-  document.getElementById('fnr-book-search').value = title + (author ? ` — ${author}` : '');
-  document.getElementById('fnr-book-value').value  = title;
-  const sugEl = document.getElementById('fnr-book-suggestions');
-  sugEl.classList.add('hidden');
-  delete sugEl.dataset.query;
-}
-
-function fnrSelectAuthor(name) {
-  document.getElementById('fnr-author-search').value = name;
-  document.getElementById('fnr-author-value').value  = name;
-  const sugEl = document.getElementById('fnr-author-suggestions');
-  sugEl.classList.add('hidden');
-  delete sugEl.dataset.query;
-}
-
-document.addEventListener('click', e => {
-  if (!e.target.closest('#fnr-book-search') && !e.target.closest('#fnr-book-suggestions'))
-    document.getElementById('fnr-book-suggestions')?.classList.add('hidden');
-  if (!e.target.closest('#fnr-author-search') && !e.target.closest('#fnr-author-suggestions'))
-    document.getElementById('fnr-author-suggestions')?.classList.add('hidden');
-});
 
 // ── User context builder ──────────────────────────────────────────────────────
 
@@ -4741,19 +4609,12 @@ function _fnrFormatTitleList(items) {
 function _fnrBuildExplicitRequestBlock(s) {
   const genreLabels   = (s.genres || []).filter(v => v !== 'something_else')
     .map(v => FNR_GENRES.find(g => g.value === v)?.label).filter(Boolean);
-  const contextLabels = (s.contexts || []).filter(v => v !== 'something_else')
-    .map(v => FNR_CONTEXTS.find(c => c.value === v)?.label).filter(Boolean);
 
   return [
     genreLabels.length   ? `GENRES: ${genreLabels.join(', ')}` : '',
     s.customGenre        ? `CUSTOM GENRE: ${s.customGenre}` : '',
-    s.topic               ? `TOPIC / MOOD: ${s.topic}` : '',
-    s.bookValue           ? `REFERENCE BOOK: ${s.bookValue}` : '',
-    s.bookNotes           ? `WHAT STAYED WITH THEM ABOUT IT: ${s.bookNotes}` : '',
-    s.authorValue         ? `REFERENCE AUTHOR: ${s.authorValue}` : '',
-    s.authorNotes         ? `WHAT THEY LOVE ABOUT THAT AUTHOR: ${s.authorNotes}` : '',
-    contextLabels.length  ? `READING CONTEXT: ${contextLabels.join(', ')}` : '',
-    s.customContext       ? `CUSTOM CONTEXT: ${s.customContext}` : '',
+    s.reference          ? `READER'S REFERENCE (free text): ${s.reference}` : '',
+    s.referenceNotes      ? `WHAT THEY'RE TRYING TO RECREATE FROM IT: ${s.referenceNotes}` : '',
     s.avoid               ? `AVOID: ${s.avoid}` : '',
   ].filter(Boolean).join('\n');
 }
@@ -4806,6 +4667,11 @@ async function submitFindNextRead() {
   document.getElementById('fnr-edit-prefs-btn').classList.remove('hidden');
   document.getElementById('fnr-results-list').innerHTML = _fnrSkeletonHtml();
   document.getElementById('fnr-form-error').classList.add('hidden');
+  // Clear any resolution line left over from a previous session — it's
+  // populated fresh below only once this call's response has parsed.
+  const resEl = document.getElementById('fnr-resolution-line');
+  resEl.textContent = '';
+  resEl.classList.add('hidden');
 
   const raw = await callAIWithFeedback(AI_PROMPTS.findNextRead, [], userMsg, null);
   if (!raw) {
@@ -4823,10 +4689,12 @@ async function submitFindNextRead() {
     return;
   }
 
-  let results;
+  let results, resolution;
   try {
     const cleaned = raw.replace(/```json|```/g, '').trim();
-    results = JSON.parse(cleaned).recommendations;
+    const parsed  = JSON.parse(cleaned);
+    results    = parsed.recommendations;
+    resolution = parsed.resolution;
     if (!Array.isArray(results) || results.length === 0) throw new Error('Empty');
   } catch {
     document.getElementById('fnr-results-section').style.display = 'none';
@@ -4842,7 +4710,45 @@ async function submitFindNextRead() {
 
   _fnrResults = results;
   _fnrRenderResults();
+  _fnrRenderResolutionLine(s.reference, resolution);
   document.getElementById('fnr-quest-exit').classList.toggle('hidden', !_fnrQuestMode);
+}
+
+/**
+ * Populates the single, once-per-submit resolution line above the results
+ * list (never touched by fnrReplaceResult — it reflects the reference field
+ * as submitted, which Replace doesn't change). Three states: reference field
+ * left blank (line stays hidden, already cleared at the top of submit); the
+ * AI returned a "resolution" value (wrap it in the reader-facing sentence
+ * here in code, so the sentence itself can't drift call to call — the model
+ * is only ever asked for the bare value); or the field had content but the
+ * AI omitted "resolution" (treated as a deliberate discard — the fixed
+ * "didn't recognise" line).
+ */
+function _fnrRenderResolutionLine(referenceValue, resolution) {
+  const resEl = document.getElementById('fnr-resolution-line');
+  if (!referenceValue || !referenceValue.trim()) return; // stays hidden/empty
+  const cleaned = _fnrCleanResolutionValue(resolution);
+  if (cleaned) {
+    resEl.textContent = `We read that as ${cleaned}.`;
+  } else {
+    resEl.textContent = "We didn't recognise that, so these five are drawn from your reading instead.";
+  }
+  resEl.classList.remove('hidden');
+}
+
+/** Strips surrounding quotes, leading/trailing whitespace, and a trailing
+ * period from the AI's bare "resolution" value before it's dropped into the
+ * client-side wrapper sentence — guards against a stray period doubling up,
+ * or literal quote marks rendering, even though the prompt asks for neither. */
+function _fnrCleanResolutionValue(value) {
+  if (typeof value !== 'string') return '';
+  let v = value.trim();
+  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+    v = v.slice(1, -1).trim();
+  }
+  if (v.endsWith('.')) v = v.slice(0, -1).trim();
+  return v;
 }
 
 // ── Results rendering ─────────────────────────────────────────────────────────

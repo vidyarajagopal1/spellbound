@@ -191,6 +191,69 @@ The count is live and reflects the actual pile. `Add a few more` opens a search 
 
 > Fill in only the parts you feel strongly about.
 
+### Form restructuring — three prompts (Batch A)
+
+The form itself (not the Stage 7 handoff above) is cut from six prompts to
+three, in this order: genre pills, a merged book-or-author prompt, and the
+avoid prompt. The avoid prompt's copy, field, and position in the payload are
+untouched. The mood prompt (`fnr-topic`) and the reading-context prompt
+(`fnr-context-pills` + its custom input) are removed entirely.
+
+**Merged prompt label** (replaces the separate book/author prompt labels):
+
+> Want to relive how a book or an author left you feeling?
+
+**Support text under the merged prompt.**
+- Before: *A book that matches the mood you're chasing today.*
+- After: *The atmosphere of a certain book, or the writing style of an author you know.*
+
+**Follow-up question label** (one question serving both):
+
+> What aspect are you trying to recreate?
+
+**Placeholder in the reference input.**
+- Before: `Start typing a title or author…`
+- After: `A title or a name`
+
+**Placeholder in the follow-up textarea.**
+- Before: two separate placeholders — `the pacing, the writing, a character, the ending…` (book notes) and `their voice, the humour, the way they build characters…` (author notes)
+- After: `the pacing, the voice, a character, the writing style...`
+
+**New line in the FNR intro**, directly after "The best part of reading is knowing there's another book waiting. Let's find yours.":
+
+> Nothing here is required. Answer only the ones you feel like.
+
+**Resolution line**, new, on the results page. Computed once at submit; Replace
+never re-resolves or re-displays it. The wrapper sentence below is client-side
+copy — the AI only ever returns the bare `{x}` value, never the full sentence,
+so the reader-facing wording can't drift call to call. Three states:
+
+- Reference field left blank — no line at all.
+- The AI extracted anything usable from the reference field — a specific
+  book, a specific author, or (failing either of those) the mood/genre/
+  scene/descriptive intent in its own paraphrase — shown always, even when
+  the reading exactly matches what the reader typed (never hidden on a
+  match, since a line that only appears sometimes would itself signal
+  something was wrong):
+  > We read that as {x}.
+
+  `{x}` is the title and author for a book (e.g. "We read that as Never Let
+  Me Go by Kazuo Ishiguro."), just the author's name for an author, or the
+  AI's own short paraphrase when it couldn't land on a specific book or
+  author but the text still carried usable intent. The reader isn't told
+  which of these three kinds of reading it was — one sentence covers all of
+  them.
+- Reference given but discarded as genuinely meaningless (nothing usable
+  came out of it at all):
+  > We didn't recognise that, so these five are drawn from your reading instead.
+
+**Removals confirmed.**
+- The small uppercase sublabel above the reference input (previously "Book" /
+  "Author") is dropped entirely — no replacement.
+- The phrase "book/author" (with a slash) must not appear anywhere in this
+  feature's copy, UI text, or code — always "a book or an author". This
+  corrects the merged prompt label's original slash form above.
+
 ### Failure
 
 > We couldn't reach the service. Check your connection and try Find Your Next Read from the Wishlist tab.

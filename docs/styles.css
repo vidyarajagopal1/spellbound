@@ -2921,39 +2921,6 @@ button.medium-btn.active {
 }
 .fnr-pill:not(.active):active { background: var(--surface2); }
 
-/* Autocomplete */
-.fnr-autocomplete-wrap {
-  position: relative;
-  margin-bottom: 6px;
-}
-.fnr-suggestions {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0; right: 0;
-  background: var(--surface2);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 8px;
-  z-index: 50;
-  overflow: hidden;
-  max-height: 220px;
-  overflow-y: auto;
-  min-height: 44px;
-}
-.fnr-suggestions.hidden { display: none; }
-.fnr-suggestion-item {
-  padding: 9px 12px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-}
-.fnr-suggestion-item:last-child { border-bottom: none; }
-.fnr-suggestion-item:active { background: rgba(255,255,255,0.06); }
-.fnr-sug-title  { font-size: 0.82rem; font-weight: 600; color: var(--text); }
-.fnr-sug-author { font-size: 0.7rem; color: var(--text-muted); font-style: italic; }
-.fnr-lookup-loading { font-size: 0.75rem; color: var(--text-muted); padding: 8px 12px; }
-
 /* Error & Submit */
 .fnr-error {
   font-size: 0.8rem;
@@ -2980,6 +2947,16 @@ button.medium-btn.active {
   transition: opacity 0.15s;
 }
 .fnr-submit-btn:active { opacity: 0.85; }
+
+/* Resolution line — single element above the result cards, not per-card */
+.fnr-resolution-line {
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.55);
+  font-style: italic;
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+.fnr-resolution-line.hidden { display: none; }
 
 /* Result cards */
 .fnr-result-card {

@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=204">
+  <link rel="stylesheet" href="styles.css?v=205">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
@@ -210,47 +210,13 @@
             <input type="text" id="fnr-custom-genre" class="fnr-text-input hidden" placeholder="Describe the kind of read…">
           </div>
 
-          <!-- Prompt 2: Topic -->
+          <!-- Prompt 2: Book or author reference -->
           <div class="fnr-prompt">
-            <p class="fnr-prompt-label">What are you in the mood to spend time with?</p>
-            <p class="fnr-support-text">Don't hold back. Make this as vague or specific as you'd like.</p>
-            <textarea id="fnr-topic" class="fnr-textarea" rows="3" placeholder="Self exploration, relationships, World War 2, a courtroom case, something funny…"></textarea>
-          </div>
-
-          <!-- Prompt 3: Book -->
-          <div class="fnr-prompt">
-            <p class="fnr-prompt-label">Want to relive how a book left you feeling?</p>
-            <p class="fnr-support-text">A book that matches the mood you're chasing today.</p>
-            <p class="fnr-prompt-sublabel">Book</p>
-            <div class="fnr-autocomplete-wrap">
-              <input type="text" id="fnr-book-search" class="fnr-text-input" placeholder="Start typing a title or author…" oninput="fnrDebouncedBookSearch()" autocomplete="off">
-              <div id="fnr-book-suggestions" class="fnr-suggestions hidden"></div>
-              <input type="hidden" id="fnr-book-value">
-            </div>
-            <p class="fnr-prompt-sublabel">What about it stayed with you?</p>
-            <textarea id="fnr-book-notes" class="fnr-textarea" rows="2" placeholder="the pacing, the writing, a character, the ending…"></textarea>
-          </div>
-
-          <!-- Prompt 4: Author -->
-          <div class="fnr-prompt">
-            <p class="fnr-prompt-label">Have an author that could lift your spirits?</p>
-            <p class="fnr-support-text">Tell us about an author whose voice you're in the mood for, and we'll round up a few you might like just as much.</p>
-            <p class="fnr-prompt-sublabel">Author</p>
-            <div class="fnr-autocomplete-wrap">
-              <input type="text" id="fnr-author-search" class="fnr-text-input" placeholder="Start typing a name…" oninput="fnrDebouncedAuthorSearch()" autocomplete="off">
-              <div id="fnr-author-suggestions" class="fnr-suggestions hidden"></div>
-              <input type="hidden" id="fnr-author-value">
-            </div>
-            <p class="fnr-prompt-sublabel">What about their writing keeps you going back?</p>
-            <textarea id="fnr-author-notes" class="fnr-textarea" rows="2" placeholder="their voice, the humour, the way they build characters…"></textarea>
-          </div>
-
-          <!-- Prompt 5: Reading context -->
-          <div class="fnr-prompt">
-            <p class="fnr-prompt-label">How are you planning to read this?</p>
-            <p class="fnr-support-text">Let us work around your reality, not against it.</p>
-            <div class="fnr-pills" id="fnr-context-pills"></div>
-            <input type="text" id="fnr-custom-context" class="fnr-text-input hidden" placeholder="Tell us more…">
+            <p class="fnr-prompt-label">Want to relive how a book or an author left you feeling?</p>
+            <p class="fnr-support-text">The atmosphere of a certain book, or the writing style of an author you know.</p>
+            <input type="text" id="fnr-reference" class="fnr-text-input" placeholder="A title or a name">
+            <p class="fnr-prompt-sublabel">What aspect are you trying to recreate?</p>
+            <textarea id="fnr-reference-notes" class="fnr-textarea" rows="2" placeholder="the pacing, the voice, a character, the writing style..."></textarea>
           </div>
 
           <!-- Prompt 6: Avoid -->
@@ -266,6 +232,7 @@
 
         <!-- Results section -->
         <div id="fnr-results-section" style="display:none">
+          <p id="fnr-resolution-line" class="fnr-resolution-line hidden"></p>
           <div id="fnr-results-list"></div>
           <div class="build-nav fnr-quest-exit hidden" id="fnr-quest-exit">
             <button class="build-skip-btn" onclick="showView('home')">Go to Home</button>
@@ -769,8 +736,8 @@
   <script src="purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="merge-libraries.js?v=204"></script>
-  <script src="app.js?v=204"></script>
+  <script src="merge-libraries.js?v=205"></script>
+  <script src="app.js?v=205"></script>
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 
