@@ -6151,6 +6151,55 @@ async function loadSettings() {
   if (gbKeyEl)      gbKeyEl.value      = gbApiKey;
   const msg = document.getElementById('settings-save-msg');
   if (msg) { msg.textContent = ''; msg.classList.add('hidden'); }
+  await renderFnrRejectedSettings();
+}
+
+// ─── SETTINGS: rejected-forever list (Batch 1 — read only) ───────────────────────
+// Reads the same `fnr_rejected_forever` meta key fnrRejectResult()/
+// fnrUndoRejectResult() (docs/app.js, FNR section) write to. Entry point
+// (button + description) is hidden entirely from Settings > Data whenever
+// the list is empty, and re-evaluated fresh every time loadSettings() runs
+// (i.e. every time Settings is opened) so it appears/disappears within the
+// same session without needing a reload. Most-recently-rejected shown
+// first (the stored array is oldest-first, since fnrRejectResult() always
+// pushes to the end — reversed here for display only, storage order
+// untouched). Read-only for now: no per-row remove, no clear-all yet (see
+// Batches 2/3 in /memories/repo/fnr-rejected-settings.md).
+async function renderFnrRejectedSettings() {
+  const list      = (await dbGetMeta('fnr_rejected_forever')) || [];
+  const actionEl  = document.getElementById('fnr-rejected-action');
+  const wrapEl    = document.getElementById('fnr-rejected-list-wrap');
+  const toggleBtn = document.getElementById('fnr-rejected-toggle-btn');
+  if (!actionEl) return;
+
+  if (list.length === 0) {
+    actionEl.classList.add('hidden');
+    return;
+  }
+  actionEl.classList.remove('hidden');
+
+  // Collapse back to the default closed state on every fresh Settings visit
+  // rather than persisting whatever expand/collapse state was left over
+  // from a previous visit this session.
+  if (wrapEl) wrapEl.classList.add('hidden');
+  if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'false');
+
+  const listEl = document.getElementById('fnr-rejected-list');
+  if (listEl) {
+    listEl.innerHTML = [...list].reverse().map(b => `
+      <div class="fnr-rejected-row">
+        <span class="fnr-rejected-title">${escapeHtml(b.title)}</span>
+        <span class="fnr-rejected-author">${escapeHtml(b.author || '')}</span>
+      </div>`).join('');
+  }
+}
+
+function toggleFnrRejectedList() {
+  const wrap = document.getElementById('fnr-rejected-list-wrap');
+  const btn  = document.getElementById('fnr-rejected-toggle-btn');
+  if (!wrap) return;
+  const nowHidden = wrap.classList.toggle('hidden');
+  if (btn) btn.setAttribute('aria-expanded', String(!nowHidden));
 }
 
 async function saveSettings() {

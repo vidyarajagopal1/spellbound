@@ -338,3 +338,21 @@ Each step tested on the live site before the next.
 ## Prerequisite
 
 Book deletion must cascade to highlights before the quest ships, so the no-books trigger can't strand a user with orphaned highlights. Worth a confirmation dialog naming the count.
+
+---
+
+## Settings — rejected recommendations list
+
+New feature, unrelated to the Quest above: Settings → Data gets a way to see and clear the permanent "never recommend again" list built by Find Your Next Read's Reject action. Built in small batches (see /memories/repo/fnr-rejected-settings.md for the full plan); copy logged here as each batch is written, before/after where something existing is being changed.
+
+### Batch 1 — entry point (new copy, no "before")
+
+**Button/link label** (sits in Settings → Data alongside "Export my library" / "Import from Goodreads" / etc.):
+
+> Books we've stopped suggesting
+
+**Description line** (small text underneath, same pattern as the other Data actions):
+
+> Books you've rejected. You can undo any of them here.
+
+**List heading:** none — deliberately omitted. The button label and description already establish what the list is and where it came from; a heading would repeat that a third time.
