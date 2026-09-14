@@ -4243,15 +4243,15 @@ MESSAGE STRUCTURE YOU WILL RECEIVE (read in this priority order):
 RESOLVING THE REFERENCE FIELD:
 The reader may name a book or an author in free text, which can be exact, misspelled, a partial or shortened title, or a bare surname. Work through these in order before giving up: an exact match; misspellings and phonetic near-misses; a partial or shortened title; a bare surname. Use the accompanying "what they're trying to recreate" text to disambiguate between candidates when more than one real book or author plausibly fits. Being torn between two plausible real candidates is not grounds for dropping the reference — pick the more likely one and report that reading; the reader sees it and can correct it. This does not loosen the standard for whether a book or author genuinely exists (see rule 7) — try harder to match a real candidate, never accept a less certain one in its place.
 If the text cannot be resolved to a specific real book or author, check whether it still carries usable meaning on its own — a mood, a genre, a scene, or a descriptive phrase. Treat that as intent and let it shape your picks even though nothing is named.
-Only genuinely meaningless input should be discarded entirely — and only ever discard it as a deliberate judgment that it carries no usable meaning, never because you ran out of space or forgot to address it. A missing "resolution" for any other reason wrongly tells the reader their input was never used at all.
-Report what you used in the top-level "resolution" field of your JSON response (see RESPONSE FORMAT) — the title and author if you landed on a specific book, just the name if you landed on an author, or your own paraphrase of the mood/genre/scene/descriptive intent if you couldn't land on a specific book or author but still found something usable. Do not write a full sentence and do not signal which of these three it was — a bare value only; the app builds the sentence shown to the reader.
-Omit "resolution" entirely in exactly two cases: the reference field was left blank, or the text was discarded as genuinely meaningless.
+Only genuinely meaningless input should be discarded entirely — and only ever discard it as a deliberate judgment that it carries no usable meaning, never because you ran out of space or forgot to address it.
+Report what you used in the top-level "resolution" field of your JSON response (see RESPONSE FORMAT) — the full title AND the author's full name if you landed on a specific book, the author's full name (always expanded to their complete name, even if the reader only typed a surname or fragment — never echo back the fragment as typed) if you landed on an author, or your own short paraphrase of the mood/genre/scene/descriptive intent if you couldn't land on a specific book or author but still found something usable. Do not write a full sentence and do not signal which of these three it was — a bare value only; the app builds the sentence shown to the reader.
+"resolution" must only ever name something you actually used to shape the recommendations. Never use it to describe the input itself or comment on your ability to interpret it — never write things like "unclear", "unintelligible", or any other description of the text. Omit the key entirely in exactly two cases: the reference field was left blank, or nothing usable could be found in it at all. There is no third option — if you write "resolution", it must be a real book, a real author, or genuine usable intent, never a description of failure.
 
 CRITICAL RULES:
 1. Return ONLY valid JSON — no prose, no preamble, no markdown code fences, no commentary outside the JSON.
 2. Return exactly 5 recommendations in the "recommendations" array.
 3. Never recommend a title that appears in the EXCLUDE LIST, in any form (same title, same title+author pair).
-4. Keep variety: do not return near-identical books or more than 2 books by the same author — unless your resolved reference (see above) is itself an author rather than a book, in which case the cap does not apply to that author specifically.
+4. Keep variety: do not return near-identical books or more than 2 books by the same author — unless your resolved reference (see above) is itself an author, in which case that cap does not apply to them specifically. When the resolved reference is an author, at least 2 of the 5 recommendations must be real books by that author not on the EXCLUDE LIST, and the remaining recommendations must be by other authors who write in similar themes, tone, or voice to them — every recommendation should connect back to the resolved author, not just the ones written by them. If fewer than 2 of their books survive the exclude list, fill the remaining slots with those same similar-themes/tone/voice authors instead — never leave a resolved author entirely unrepresented just because some of their books were excluded.
 5. Do not default to extremely famous "canon"/best-of-all-time staples unless they genuinely and specifically satisfy the reader's request — a request for one genre or mood must not be answered with an unrelated famous book just because it's well known.
 6. Each "why_it_fits" must reference at least one specific signal from the READER'S REQUEST. If nothing in the READER'S REQUEST can be cited specifically, you may instead ground "why_it_fits" in the TASTE CALIBRATION profile — but only by naming a specific book or highlight from it that the pick resonates with, never a generic statement about what the reader "tends to enjoy." The ban on generic, unsupported statements applies either way.
 7. Only recommend real, verifiable books. Author name and first-publication year must be factually correct. If you are not certain a title genuinely exists with that author, do not use it — choose a different, real book you are certain about instead. Never invent a title.
@@ -4260,7 +4260,7 @@ CRITICAL RULES:
 
 RESPONSE FORMAT — return this exact JSON structure:
 {
-  "resolution": "Bare value only — title and author, or an author's name, or a short paraphrase of usable intent. Omit this key entirely if the reference field was blank, or if its text was discarded as meaningless.",
+  "resolution": "Bare value naming what was actually used to shape the picks — a title and the author's full name, or an author's full name, or a short phrase capturing real intent. Never a description of the input, and never a comment about not understanding it. Omit this key entirely if the field was blank or nothing usable was found.",
   "recommendations": [
     {
       "title": "Book title",
@@ -4396,6 +4396,20 @@ function openFindNextRead(fromQuest = false) {
   document.getElementById('fnr-edit-prefs-btn').classList.add('hidden');
   document.getElementById('fnr-quest-exit').classList.add('hidden');
   _fnrRenderPills();
+  _fnrClearFormFields();
+}
+
+// Resets the actual DOM field values, not just the in-memory _fnrFormState.
+// Nulling _fnrFormState alone doesn't touch inputs/textareas left over from
+// a previous session — display:none never clears a field's .value — so a
+// fresh open (as opposed to Edit Preferences, which restores on purpose via
+// fnrBack/_fnrRestoreForm) must explicitly blank them here.
+function _fnrClearFormFields() {
+  document.getElementById('fnr-custom-genre').value      = '';
+  document.getElementById('fnr-custom-genre').classList.add('hidden');
+  document.getElementById('fnr-reference').value         = '';
+  document.getElementById('fnr-reference-notes').value   = '';
+  document.getElementById('fnr-avoid').value              = '';
 }
 
 function fnrBack() {

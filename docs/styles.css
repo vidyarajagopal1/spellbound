@@ -2844,13 +2844,8 @@ button.medium-btn.active {
   color: var(--text);
   line-height: 1.4;
 }
-.fnr-prompt-sublabel {
-  font-size: 0.72rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-  margin: 12px 0 6px;
+.fnr-prompt-label.fnr-prompt-followup {
+  margin-top: 12px;
 }
 .fnr-support-text {
   font-size: 0.78rem;
