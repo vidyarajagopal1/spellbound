@@ -4785,6 +4785,16 @@ async function submitFindNextRead() {
   }
 
   _fnrResults = results;
+  // `_fnrRejectedSlots` holds raw array INDICES (not book identity) purely
+  // to dim a card + swap its button to Undo. Those indices are meaningless
+  // against a brand-new results array — without this reset, a card that
+  // happens to land on a previously-rejected INDEX (e.g. slot 1 again after
+  // Edit Preferences -> resubmit) would incorrectly render as
+  // already-rejected regardless of which book is actually there. Permanent
+  // exclusion (fnr_rejected_forever) and same-sitting exclusion
+  // (_fnrSessionRejected) are both correctly keyed by title/author already
+  // and are untouched here — this only clears the stale UI-dimming state.
+  _fnrRejectedSlots = new Set();
   _fnrRenderResults();
   _fnrRenderResolutionLine(s.reference, resolution);
   document.getElementById('fnr-quest-exit').classList.toggle('hidden', !_fnrQuestMode);
