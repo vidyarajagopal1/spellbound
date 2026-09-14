@@ -256,12 +256,15 @@ so the reader-facing wording can't drift call to call. Three states:
 
 ### Surprise pill (Batch B)
 
-A standalone pill, not a member of the genre pills group, sitting below the
-genre block:
+A standalone pill, not a member of the genre pills group, sitting after the
+book-or-author question:
 
-> Or if you'd rather be surprised...
+> Or would you rather be surprised?
 >
 > `Help me break my usual pattern`
+
+The lead-in line is set in italics; the pill is sized to fit its label, not
+full width. (Lead-in copy revised — was: *Or if you'd rather be surprised...*)
 
 Selecting it clears (values, not just appearance) and disables the genre
 pills, the custom-genre input, the reference field, and the follow-up notes

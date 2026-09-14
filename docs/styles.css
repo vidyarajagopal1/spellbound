@@ -2927,13 +2927,8 @@ button.medium-btn.active {
 .fnr-surprise-block {
   margin-bottom: 2.5rem;
 }
-.fnr-pill-wide {
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 13px 20px;
-  font-size: 0.85rem;
-  text-align: left;
+.fnr-surprise-lead {
+  font-style: italic;
 }
 .fnr-surprise-message {
   font-size: 0.82rem;
