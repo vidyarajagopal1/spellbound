@@ -280,6 +280,12 @@ exactly-two-books-by-author requirement (which only ever fires from a
 resolved reference) and the surprise instruction can never both apply to the
 same request.
 
+### Genre support text trim (Batch C)
+
+Support text under the genre pills tightened:
+- Before: *Pick a few if you're torn. Too much self-awareness can be injurious to curiosity.*
+- After: *Pick a few if you're torn.*
+
 ### Failure
 
 > We couldn't reach the service. Check your connection and try Find Your Next Read from the Wishlist tab.

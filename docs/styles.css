@@ -2926,11 +2926,10 @@ button.medium-btn.active {
 /* Surprise pill (standalone, not part of the genre pills group) */
 .fnr-surprise-block {
   margin: 0 0 2.5rem;
-  padding: 1.25rem 1rem;
+  padding: 1.25rem 0;
   border-top: 1px solid rgba(232, 223, 200, 0.14);
   border-bottom: 1px solid rgba(232, 223, 200, 0.14);
   background: rgba(232, 223, 200, 0.05);
-  text-align: center;
 }
 .fnr-pill-wide {
   display: block;

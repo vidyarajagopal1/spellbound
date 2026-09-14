@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=209">
+  <link rel="stylesheet" href="styles.css?v=210">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
@@ -206,16 +206,9 @@
           <!-- Prompt 1: Genre mood -->
           <div class="fnr-prompt">
             <p class="fnr-prompt-label">In the mood for a specific kind of read?</p>
-            <p class="fnr-support-text">Pick a few if you're torn. Too much self-awareness can be injurious to curiosity.</p>
+            <p class="fnr-support-text">Pick a few if you're torn.</p>
             <div class="fnr-pills" id="fnr-genre-pills"></div>
             <input type="text" id="fnr-custom-genre" class="fnr-text-input hidden" placeholder="Describe the kind of read…">
-          </div>
-
-          <!-- Surprise pill: standalone, not part of the genre pills group -->
-          <div class="fnr-surprise-block">
-            <p class="fnr-prompt-label">Or if you'd rather be surprised</p>
-            <button type="button" class="fnr-pill fnr-pill-wide" id="fnr-surprise-pill" onclick="fnrToggleSurprise(this)">Help me break my usual pattern</button>
-            <p class="fnr-surprise-message hidden" id="fnr-surprise-message">We've cleared the rest. Just tell us what to avoid, if anything.</p>
           </div>
 
           <!-- Prompt 2: Book or author reference -->
@@ -225,6 +218,13 @@
             <input type="text" id="fnr-reference" class="fnr-text-input" placeholder="A title or a name">
             <p class="fnr-prompt-label fnr-prompt-followup">What aspect are you trying to recreate?</p>
             <textarea id="fnr-reference-notes" class="fnr-textarea" rows="2" placeholder="the pacing, the voice, a character, the writing style..."></textarea>
+          </div>
+
+          <!-- Surprise pill: standalone, not part of the genre pills group -->
+          <div class="fnr-surprise-block">
+            <p class="fnr-prompt-label">Or if you'd rather be surprised</p>
+            <button type="button" class="fnr-pill fnr-pill-wide" id="fnr-surprise-pill" onclick="fnrToggleSurprise(this)">Help me break my usual pattern</button>
+            <p class="fnr-surprise-message hidden" id="fnr-surprise-message">We've cleared the rest. Just tell us what to avoid, if anything.</p>
           </div>
 
           <!-- Prompt 6: Avoid -->
@@ -744,8 +744,8 @@
   <script src="purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="merge-libraries.js?v=209"></script>
-  <script src="app.js?v=209"></script>
+  <script src="merge-libraries.js?v=210"></script>
+  <script src="app.js?v=210"></script>
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 
