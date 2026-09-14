@@ -1712,7 +1712,18 @@ function debounceBookLookup(form) {
   } else {
     sugEl.innerHTML = '<p class="book-lookup-loading">Looking up…</p>';
   }
-  _lookupTimer = setTimeout(() => fetchBookSuggestions(title, form), 500);
+  _lookupTimer = setTimeout(() => {
+    fetchBookSuggestions(title, form);
+    // Also runs the "did you mean an existing book?" nudge here, on the same
+    // debounce as the lookup itself — previously this only fired on the
+    // title field's blur (i.e. only once the reader left the field
+    // entirely, e.g. by tabbing to Author) or when a lookup suggestion was
+    // picked. Checking it here too means an exact-title match against an
+    // existing book surfaces as soon as typing pauses, without requiring the
+    // reader to leave the field first. Add Book only — checkAddBookDuplicate/
+    // #add-book-dup-modal don't exist for the Wishlist/Edit Book forms.
+    if (form === 'add') checkAddBookDuplicate(title);
+  }, 500);
 }
 
 function triggerEditBookLookup() {
