@@ -22,6 +22,12 @@ let gisReady       = false;
 let tokenClient;
 const GOOGLE_SIGNIN_FLAG_KEY = 'spellbound_google_signed_in';
 const DRIVE_BACKUP_PREFIX    = 'spellbound-data-backup-';
+// Unconditional pre-merge safety-net backup (Step 4 part one) — a distinct
+// prefix from DRIVE_BACKUP_PREFIX above so the two are never confused at a
+// glance, and so each one's own prune pass (name-contains query) can never
+// match, count, or delete the other's files.
+const DRIVE_PREMERGE_BACKUP_PREFIX = 'spellbound-premerge-backup-';
+const PREMERGE_BACKUP_KEEP_COUNT   = 3; // "at least the last three" — these are the ones actually meant to be restored from
 const SILENT_SIGNIN_TIMEOUT_MS = 8000; // if a silent (prompt:'') token request never calls back at all (seen with blocked third-party cookies etc.), stop waiting after this long
 let _tokenExpiresAt      = 0;     // epoch ms; 0 = no token / unknown expiry yet
 let _tokenRefreshPromise = null;  // in-flight silent refresh, deduped across callers
@@ -40,6 +46,12 @@ let _syncMergeMode = 'dry';
 // belongs solely to syncToDrive()'s v189 staleness guard and must not be
 // touched by anything else). undefined = not observed yet this session.
 let _mergeCheckLastModifiedTime = undefined;
+// Gates the pre-merge safety-net backup (_ensurePreMergeBackup) to firing at
+// most once per session — set true only once that backup has actually
+// SUCCEEDED. A merge runs on 3 trigger points and can be evaluated on every
+// saveAndSync() call, so without this gate a live-mode session could produce
+// one backup file per save instead of one per session.
+let _preMergeBackupDoneThisSession = false;
 let _authState           = 'unknown'; // 'unknown' | 'signed-in' | 'signed-out'
 let _pendingOfflineEdit  = false;     // an edit happened while auth state was still 'unknown'
 let _resolveInitialLoad;
@@ -604,10 +616,13 @@ function _logDryRunMergeSummary(trigger, stats) {
 // when Drive's modifiedTime has actually moved since this session last
 // observed it here — only then does it fetch the full Drive file and run
 // the real merge, so this does NOT add a full pull to every saveAndSync()
-// call site. In 'dry' mode (and, for now, 'live' too — its actual write
-// path doesn't exist yet, a future step) the merge result is only logged,
-// then discarded; the existing push-or-pull path this runs alongside is
-// completely untouched by it. 'off' makes this an immediate no-op.
+// call site. In 'dry' mode the merge result is only logged, then discarded;
+// in 'live' mode (Step 4 part one) the ONLY additional thing that happens is
+// exercising the pre-merge safety-net backup once per session — the merge
+// result itself is still only logged and discarded, exactly like dry mode,
+// since the actual live-mode write path doesn't exist yet (a later step).
+// The existing push-or-pull path this runs alongside is completely untouched
+// by any of this. 'off' makes this an immediate no-op.
 async function _maybeRunDryMergeCheck(trigger) {
   if (_syncMergeMode === 'off') return;
   if (!gapiReady || !gapi.client.getToken()) return; // nothing to check without a live token
@@ -641,6 +656,17 @@ async function _maybeRunDryMergeCheck(trigger) {
     const local  = await _buildLocalSnapshotForMergeCheck();
     const { stats } = mergeLibrariesWithStats(local, remote);
     _logDryRunMergeSummary(trigger, stats);
+    if (_syncMergeMode === 'live') {
+      // Safety-net rehearsal only (Step 4 part one) — no live-mode write
+      // exists yet to actually gate, but this exercises the backup's own
+      // once-per-session gate/fail-closed behaviour end to end so it's
+      // ready for the write path a later step adds. Nothing downstream
+      // reads this result yet either way.
+      const backupOk = await _ensurePreMergeBackup(fileId);
+      if (!backupOk) {
+        console.warn(`${SYNC_MERGE_LOG_PREFIX} pre-merge backup failed this attempt — a real live-mode write would fall back to push-or-pull here`);
+      }
+    }
     // Result is always discarded here — nothing is written to Drive or
     // IndexedDB by this function, in either 'dry' or 'live' mode, in this step.
   } catch (err) {
@@ -679,6 +705,25 @@ function reloadForDriveStale() {
   location.reload();
 }
 
+// Fetches the full current content of a Drive file (unless already known
+// via existingPayloadString) and copies it verbatim to a new file in
+// appDataFolder named backupName. Shared by both the shrink-detection
+// backup (_backupDriveFileIfShrinking, fails open) and the unconditional
+// pre-merge backup (_ensurePreMergeBackup, fails closed) — this helper only
+// performs the copy and lets any error propagate to whichever one called it,
+// since the two have opposite failure-handling requirements.
+async function _copyDriveFileToBackup(fileId, backupName, existingPayloadString) {
+  if (existingPayloadString == null) {
+    const res = await gapi.client.request({
+      path:   `https://www.googleapis.com/drive/v3/files/${fileId}`,
+      method: 'GET',
+      params: { alt: 'media' }
+    });
+    existingPayloadString = typeof res.result === 'string' ? res.result : JSON.stringify(res.result);
+  }
+  await _driveMultipartRequest('POST', null, { name: backupName, parents: ['appDataFolder'] }, existingPayloadString);
+}
+
 // Before overwriting the primary Drive file with a payload that has FEWER
 // books+highlights than what's already stored there, copy the existing file
 // to a separate timestamped file in appDataFolder first, then prune down to
@@ -707,17 +752,8 @@ async function _backupDriveFileIfShrinking(fileId, newCount) {
       existingCount = (existingData.books || []).length + (existingData.highlights || []).length;
     }
     if (newCount >= existingCount) return;
-    if (existingPayloadString === null) {
-      // Count came from cache, so we still need the actual bytes to copy.
-      const res = await gapi.client.request({
-        path:   `https://www.googleapis.com/drive/v3/files/${fileId}`,
-        method: 'GET',
-        params: { alt: 'media' }
-      });
-      existingPayloadString = typeof res.result === 'string' ? res.result : JSON.stringify(res.result);
-    }
     const backupName = `${DRIVE_BACKUP_PREFIX}${Date.now()}.json`;
-    await _driveMultipartRequest('POST', null, { name: backupName, parents: ['appDataFolder'] }, existingPayloadString);
+    await _copyDriveFileToBackup(fileId, backupName, existingPayloadString);
     await _pruneOldDriveBackups();
   } catch (err) {
     console.error('Drive pre-write backup check failed', err);
@@ -742,6 +778,119 @@ async function _pruneOldDriveBackups() {
   }
 }
 
+// Unconditional pre-merge safety-net backup (Step 4 part one). Unlike
+// _backupDriveFileIfShrinking (which only fires when the payload shrinks,
+// and fails open), this one must run regardless of record counts — a merge
+// bug that keeps the right record COUNT but corrupts record CONTENT would
+// slip straight past the shrink check, since counts never move. It also
+// FAILS CLOSED: returns false if the copy can't be written, and the caller
+// must not proceed with the live-mode write in that case, falling back to
+// today's push-or-pull behaviour instead. Gated to firing at most once per
+// session via _preMergeBackupDoneThisSession (set true only on success, so a
+// failed attempt is retried on the next trigger rather than being silently
+// skipped forever).
+async function _ensurePreMergeBackup(fileId) {
+  if (_preMergeBackupDoneThisSession) return true;
+  try {
+    const backupName = `${DRIVE_PREMERGE_BACKUP_PREFIX}${Date.now()}.json`;
+    await _copyDriveFileToBackup(fileId, backupName, null);
+    _preMergeBackupDoneThisSession = true;
+    await _prunePreMergeBackups();
+    return true;
+  } catch (err) {
+    console.error(`${SYNC_MERGE_LOG_PREFIX} pre-merge backup failed — live-mode write must not proceed, falling back to today's push-or-pull behaviour`, err);
+    return false;
+  }
+}
+
+// Keeps only the PREMERGE_BACKUP_KEEP_COUNT (3) most recently created
+// pre-merge backup files, deleting anything older. Uses its own distinct
+// name-contains query (DRIVE_PREMERGE_BACKUP_PREFIX), so this can never see
+// or delete a shrink-detection backup, and _pruneOldDriveBackups' query can
+// never see or delete one of these either. Fails open — pruning is
+// housekeeping, not the safety net itself; only the backup write above needs
+// to fail closed.
+async function _prunePreMergeBackups() {
+  try {
+    const res = await gapi.client.request({
+      path:   'https://www.googleapis.com/drive/v3/files',
+      method: 'GET',
+      params: { spaces: 'appDataFolder', q: `name contains '${DRIVE_PREMERGE_BACKUP_PREFIX}'`, fields: 'files(id,createdTime)', orderBy: 'createdTime desc' }
+    });
+    const stale = (res.result.files || []).slice(PREMERGE_BACKUP_KEEP_COUNT);
+    for (const f of stale) {
+      await gapi.client.request({ path: `https://www.googleapis.com/drive/v3/files/${f.id}`, method: 'DELETE' });
+    }
+  } catch (err) {
+    console.error('Drive pre-merge backup prune failed', err);
+  }
+}
+
+// ─── CONSOLE-CALLABLE BACKUP RECOVERY (Step 4 part one) ────────────────────
+// Not wired into any UI — call these by name from the browser console.
+
+// Lists every backup file (both shrink-detection and pre-merge) currently in
+// appDataFolder, newest first, with creation time and size. Usage:
+// listDriveBackups().then(() => {}) — the table is printed as a side effect.
+async function listDriveBackups() {
+  await _ensureFreshToken();
+  const res = await gapi.client.request({
+    path:   'https://www.googleapis.com/drive/v3/files',
+    method: 'GET',
+    params: { spaces: 'appDataFolder', q: `name contains 'backup-'`, fields: 'files(id,name,createdTime,size)', orderBy: 'createdTime desc' }
+  });
+  const files = (res.result.files || []).map(f => ({
+    name:        f.name,
+    createdTime: f.createdTime,
+    sizeBytes:   f.size ? Number(f.size) : null
+  }));
+  console.table(files);
+  return files;
+}
+
+// Restores a named backup file (get the name from listDriveBackups()) into
+// THIS device's local IndexedDB — clears every local store and repopulates
+// from that backup's content, same shape as syncFromDrive()'s pull. Does NOT
+// touch the live Drive file, and does NOT push anything back up by itself —
+// review the restored data, then use the app's normal sync if you want to
+// push it back to Drive. Usage: restoreDriveBackup('spellbound-premerge-backup-1234.json')
+async function restoreDriveBackup(name) {
+  await _ensureFreshToken();
+  const listRes = await gapi.client.request({
+    path:   'https://www.googleapis.com/drive/v3/files',
+    method: 'GET',
+    params: { spaces: 'appDataFolder', q: `name='${name}'`, fields: 'files(id,name)' }
+  });
+  const file = (listRes.result.files || [])[0];
+  if (!file) {
+    console.error(`${SYNC_MERGE_LOG_PREFIX} restoreDriveBackup: no backup file named "${name}" found`);
+    return false;
+  }
+  const res = await gapi.client.request({
+    path:   `https://www.googleapis.com/drive/v3/files/${file.id}`,
+    method: 'GET',
+    params: { alt: 'media' }
+  });
+  const data = typeof res.result === 'string' ? JSON.parse(res.result) : res.result;
+  await dbClear('books');
+  await dbClear('highlights');
+  await dbClear('essays');
+  await dbClear('wishlist');
+  await dbClear('challenges');
+  await dbClear('essay_drafts');
+  for (const b of (data.books        || [])) await dbPut('books',        b);
+  for (const h of (data.highlights   || [])) await dbPut('highlights',   h);
+  for (const e of (data.essays       || [])) await dbPut('essays',       e);
+  for (const w of (data.wishlist     || [])) await dbPut('wishlist',     w);
+  for (const c of (data.challenges   || [])) await dbPut('challenges',   c);
+  for (const d of (data.essay_drafts || [])) await dbPut('essay_drafts', d);
+  if (data.waitlistOrder) await dbSetMeta('waitlist-order', data.waitlistOrder);
+  if (data.wishlistOrder) await dbSetMeta('wishlist-order', data.wishlistOrder);
+  await loadData();
+  refreshCurrentView();
+  console.log(`${SYNC_MERGE_LOG_PREFIX} restored local data from backup "${name}"`);
+  return true;
+}
 
 async function syncFromDrive() {
   await _initialLoadPromise;
