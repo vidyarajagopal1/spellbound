@@ -2925,7 +2925,19 @@ button.medium-btn.active {
 
 /* Surprise pill (standalone, not part of the genre pills group) */
 .fnr-surprise-block {
-  margin-bottom: 2.5rem;
+  margin: 0 0 2.5rem;
+  padding: 1.25rem 1rem;
+  border-top: 1px solid rgba(232, 223, 200, 0.14);
+  border-bottom: 1px solid rgba(232, 223, 200, 0.14);
+  background: rgba(232, 223, 200, 0.05);
+  text-align: center;
+}
+.fnr-pill-wide {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 13px 20px;
+  font-size: 0.85rem;
 }
 .fnr-surprise-message {
   font-size: 0.82rem;
@@ -2936,6 +2948,7 @@ button.medium-btn.active {
   padding: 10px 12px;
   margin-top: 12px;
   line-height: 1.5;
+  text-align: left;
 }
 .fnr-surprise-message.hidden { display: none; }
 
