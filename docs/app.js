@@ -2120,8 +2120,21 @@ function showAddHighlightForm() {
     });
     document.getElementById('existing-book-section').style.display = 'block';
     document.getElementById('new-book-section').style.display      = 'none';
+    // Only required when it's actually the field the reader needs to fill
+    // in (existing-book choice, book-choice-section visible). See the else
+    // branch below for why this must be false when opened from a book's own
+    // detail page.
+    document.getElementById('highlight-book-select').required = true;
   } else {
     document.getElementById('book-choice-section').style.display = 'none';
+    // The book is already known (currentBookId), so #book-choice-section —
+    // including this hidden proxy <select> — is never shown or filled in.
+    // Left `required` with no value, a hidden field can't be focused for
+    // native validation, which silently blocks the ENTIRE form's submit
+    // (browser console: "An invalid form control ... is not focusable").
+    // Must be cleared here or Add Highlight from a book's detail page never
+    // submits anything, regardless of the highlight text/why/date fields.
+    document.getElementById('highlight-book-select').required = false;
   }
 }
 
@@ -2187,6 +2200,11 @@ function toggleBookChoice(choice) {
   });
   document.getElementById('existing-book-section').style.display = choice === 'existing' ? 'block' : 'none';
   document.getElementById('new-book-section').style.display      = choice === 'new'      ? 'block' : 'none';
+  // Same reasoning as showAddHighlightForm(): the hidden select must only be
+  // required while it's actually the field in play, or an empty hidden
+  // required field silently blocks the whole form's submit once 'Add new
+  // book' is chosen instead.
+  document.getElementById('highlight-book-select').required = choice === 'existing';
 }
 
 async function addHighlight(event) {
