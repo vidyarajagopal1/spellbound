@@ -758,6 +758,7 @@ async function _maybeRunSyncMerge(trigger) {
   }
 
   try {
+    updateSyncStatus('Syncing…');
     await _writeMergedResultToLocal(merged);
     const writeRes = await _writeMergedResultToDrive(fileId, merged);
     // Keep the v189 staleness guard's own baseline, and this function's own
@@ -771,9 +772,11 @@ async function _maybeRunSyncMerge(trigger) {
     }
     _cachedRemoteCount = merged.books.length + merged.highlights.length;
     console.log(`${SYNC_MERGE_LOG_PREFIX} live merge write succeeded (trigger: ${trigger})`);
+    updateSyncStatus('Synced ' + new Date().toLocaleTimeString());
     return true;
   } catch (err) {
     console.error(`${SYNC_MERGE_LOG_PREFIX} live merge write failed, falling back to today's push-or-pull behaviour`, err);
+    updateSyncStatus('Sync failed', true);
     return false;
   }
 }
