@@ -6122,7 +6122,28 @@ async function loadSettings() {
   if (gbKeyEl)      gbKeyEl.value      = gbApiKey;
   const msg = document.getElementById('settings-save-msg');
   if (msg) { msg.textContent = ''; msg.classList.add('hidden'); }
+
+  // Collapse the "Keys and codes" section back to its default closed state
+  // on every fresh Settings visit, same reasoning as the rejected-forever
+  // list below — don't persist whatever expand/collapse state was left
+  // over from a previous visit this session.
+  const advancedContent = document.getElementById('settings-advanced-content');
+  const advancedToggle  = document.getElementById('settings-advanced-toggle-btn');
+  if (advancedContent) advancedContent.classList.add('hidden');
+  if (advancedToggle)  advancedToggle.setAttribute('aria-expanded', 'false');
+
   await renderFnrRejectedSettings();
+}
+
+// Toggles the "Keys and codes" section (access code, AI provider, AI API
+// key, Google Books API key) open/closed. Same hidden-class + aria-expanded
+// pattern as toggleFnrRejectedList() below.
+function toggleAdvancedSettings() {
+  const wrap = document.getElementById('settings-advanced-content');
+  const btn  = document.getElementById('settings-advanced-toggle-btn');
+  if (!wrap) return;
+  const nowHidden = wrap.classList.toggle('hidden');
+  if (btn) btn.setAttribute('aria-expanded', String(!nowHidden));
 }
 
 // ─── SETTINGS: rejected-forever list (Batch 1 read + Batch 2 per-row remove) ──

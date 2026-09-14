@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=215">
+  <link rel="stylesheet" href="styles.css?v=216">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
@@ -567,56 +567,57 @@
         </section>
 
         <section class="settings-section">
-          <h3 class="settings-section-title">AI Assistant</h3>
-          <p class="settings-section-desc">AI features work out of the box — no setup needed. The fields below are entirely optional. Nothing here is synced to Google Drive.</p>
+          <button class="settings-section-toggle" onclick="toggleAdvancedSettings()" id="settings-advanced-toggle-btn" aria-expanded="false">
+            <span class="settings-section-title">Keys and codes</span>
+            <i class="ph-bold ph-caret-down settings-section-caret"></i>
+          </button>
 
-          <div class="settings-field">
-            <label for="settings-ai-access-code">Access code (optional — pre-configured, only override if you have your own)</label>
-            <div class="settings-key-row">
-              <input type="password" id="settings-ai-access-code" placeholder="Pre-configured — enter your own to override" autocomplete="off" spellcheck="false">
-              <button class="settings-key-toggle" onclick="toggleAccessCodeVisibility()" aria-label="Toggle access code visibility">
-                <i class="ph-bold ph-eye" id="settings-access-code-eye"></i>
-              </button>
+          <div id="settings-advanced-content" class="settings-advanced-content hidden">
+            <p class="settings-section-desc">AI features work out of the box — no setup needed. The fields below are entirely optional. Nothing here is synced to Google Drive.</p>
+
+            <div class="settings-field">
+              <label for="settings-ai-access-code">Access code (optional — pre-configured, only override if you have your own)</label>
+              <div class="settings-key-row">
+                <input type="password" id="settings-ai-access-code" placeholder="Pre-configured — enter your own to override" autocomplete="off" spellcheck="false">
+                <button class="settings-key-toggle" onclick="toggleAccessCodeVisibility()" aria-label="Toggle access code visibility">
+                  <i class="ph-bold ph-eye" id="settings-access-code-eye"></i>
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div class="settings-field">
-            <label for="settings-ai-provider">AI Provider (advanced)</label>
-            <select id="settings-ai-provider">
-              <option value="openai">OpenAI (GPT-4o)</option>
-              <option value="claude">Anthropic (Claude)</option>
-            </select>
-          </div>
-
-          <div class="settings-field">
-            <label for="settings-ai-key">API Key (advanced — if provided, used instead of the built-in access)</label>
-            <div class="settings-key-row">
-              <input type="password" id="settings-ai-key" placeholder="Paste your own API key here" autocomplete="off" spellcheck="false">
-              <button class="settings-key-toggle" onclick="toggleApiKeyVisibility()" aria-label="Toggle key visibility">
-                <i class="ph-bold ph-eye" id="settings-key-eye"></i>
-              </button>
+            <div class="settings-field">
+              <label for="settings-ai-provider">AI Provider (advanced)</label>
+              <select id="settings-ai-provider">
+                <option value="openai">OpenAI (GPT-4o)</option>
+                <option value="claude">Anthropic (Claude)</option>
+              </select>
             </div>
-          </div>
 
-          <button class="settings-save-btn" onclick="saveSettings()">Save</button>
-          <p id="settings-save-msg" class="settings-save-msg hidden"></p>
-        </section>
-
-        <section class="settings-section">
-          <h3 class="settings-section-title">Book Lookup</h3>
-          <p class="settings-section-desc">Book search and description lookups work out of the box, but share a small public quota that can run out. Add your own free Google Books API key for more reliable lookups.</p>
-
-          <div class="settings-field">
-            <label for="settings-gb-api-key">Google Books API Key (optional)</label>
-            <div class="settings-key-row">
-              <input type="password" id="settings-gb-api-key" placeholder="Paste your own Google Books API key here" autocomplete="off" spellcheck="false">
-              <button class="settings-key-toggle" onclick="toggleGbApiKeyVisibility()" aria-label="Toggle key visibility">
-                <i class="ph-bold ph-eye" id="settings-gb-key-eye"></i>
-              </button>
+            <div class="settings-field">
+              <label for="settings-ai-key">API Key (advanced — if provided, used instead of the built-in access)</label>
+              <div class="settings-key-row">
+                <input type="password" id="settings-ai-key" placeholder="Paste your own API key here" autocomplete="off" spellcheck="false">
+                <button class="settings-key-toggle" onclick="toggleApiKeyVisibility()" aria-label="Toggle key visibility">
+                  <i class="ph-bold ph-eye" id="settings-key-eye"></i>
+                </button>
+              </div>
             </div>
-          </div>
 
-          <button class="settings-save-btn" onclick="saveSettings()">Save</button>
+            <p class="settings-section-desc">Book search and description lookups work out of the box, but share a small public quota that can run out. Add your own free Google Books API key for more reliable lookups.</p>
+
+            <div class="settings-field">
+              <label for="settings-gb-api-key">Google Books API Key (optional)</label>
+              <div class="settings-key-row">
+                <input type="password" id="settings-gb-api-key" placeholder="Paste your own Google Books API key here" autocomplete="off" spellcheck="false">
+                <button class="settings-key-toggle" onclick="toggleGbApiKeyVisibility()" aria-label="Toggle key visibility">
+                  <i class="ph-bold ph-eye" id="settings-gb-key-eye"></i>
+                </button>
+              </div>
+            </div>
+
+            <button class="settings-save-btn" onclick="saveSettings()">Save</button>
+            <p id="settings-save-msg" class="settings-save-msg hidden"></p>
+          </div>
         </section>
       </div>
     </div>
@@ -747,8 +748,8 @@
   <script src="purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="merge-libraries.js?v=215"></script>
-  <script src="app.js?v=215"></script>
+  <script src="merge-libraries.js?v=216"></script>
+  <script src="app.js?v=216"></script>
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 

@@ -2479,6 +2479,33 @@ button.medium-btn.active {
   margin-bottom: 1rem;
   line-height: 1.5;
 }
+.settings-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.settings-section-toggle .settings-section-title {
+  margin-bottom: 0;
+}
+.settings-section-caret {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+.settings-section-toggle[aria-expanded="true"] .settings-section-caret {
+  transform: rotate(180deg);
+}
+.settings-advanced-content {
+  margin-top: 0.85rem;
+}
 .settings-field {
   margin-bottom: 1rem;
 }
