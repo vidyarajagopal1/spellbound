@@ -2858,7 +2858,18 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
   let sendWords = cleaned;
   if (words.length > 1) {
     const leading = words.slice(0, -1).join(' ');
-    if (leading.length >= 3) sendWords = leading;
+    // Only actually drop the last word if what's left still has something
+    // non-stopword to search on. Otherwise a completely real two-word title
+    // starting with a stopword (e.g. "The Correspondent", "The Alchemist")
+    // would get truncated down to just "The" — which the check right below
+    // correctly treats as meaningless and bails out on — silently discarding
+    // the one word that actually identifies the book. Falling back to the
+    // full, untruncated query here still lets that same check work exactly
+    // as intended for the genuinely-empty case (e.g. the user has only
+    // typed "The " so far).
+    if (leading.length >= 3 && !leading.split(' ').every(w => GB_STOPWORDS.has(w.toLowerCase()))) {
+      sendWords = leading;
+    }
   }
   // If every word we'd send is a common stopword, the API would just return
   // thirty arbitrary books that the local filter discards anyway — skip the
