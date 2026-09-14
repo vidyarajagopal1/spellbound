@@ -39,7 +39,7 @@ let _cachedDriveFileId   = undefined; // undefined = not yet resolved this sessi
 let _cachedRemoteCount   = null;      // last known books+highlights count of the remote file, or null if not yet known this session
 let _cachedRemoteModifiedTime = undefined; // undefined = no baseline yet this session; string = modifiedTime observed on the last successful staleness check or push this session — see syncToDrive()'s staleness guard
 // sync_merge_mode ('off'|'dry'|'live'), read once at boot from the meta
-// store — see _maybeRunDryMergeCheck() below for what each value does.
+// store — see _maybeRunSyncMerge() below for what each value does.
 let _syncMergeMode = 'dry';
 // Session-scoped "last observed" Drive modifiedTime dedicated to the merge
 // check only — deliberately separate from _cachedRemoteModifiedTime (which
@@ -314,8 +314,19 @@ async function _localRecordCount() {
 
 async function saveAndSync() {
   await loadData();
-  _maybeRunDryMergeCheck('saveAndSync').catch(() => {});
-  syncToDrive().catch(() => {});
+  if (_syncMergeMode === 'live') {
+    // Live mode: a successful merge write already covers this save (both
+    // IndexedDB and Drive are up to date), so the plain push is skipped —
+    // this IS "replacing the push-or-pull decision" for this call site. If
+    // it didn't run or fell back (no Drive file yet, backup failed, write
+    // failed), today's push still happens exactly as before.
+    const liveWriteDone = await _maybeRunSyncMerge('saveAndSync');
+    if (liveWriteDone) return;
+    syncToDrive().catch(() => {});
+  } else {
+    _maybeRunSyncMerge('saveAndSync').catch(() => {});
+    syncToDrive().catch(() => {});
+  }
 }
 
 // Shows a dismissible "changes are only local" pop-up. Triggered from the
@@ -412,7 +423,18 @@ async function _handleTokenResponse(resp) {
   localStorage.setItem(GOOGLE_SIGNIN_FLAG_KEY, '1');
   setLoggedInUI(true);
   _setAuthState('signed-in');
-  _maybeRunDryMergeCheck('sign-in').catch(() => {});
+  if (_syncMergeMode === 'live') {
+    // Live mode: a successful merge write here replaces the one-time
+    // push-or-pull decision below entirely — mark it done so that decision
+    // is skipped rather than also running (which could otherwise race or
+    // clobber the merge write with a plain push/pull immediately after).
+    // If the merge didn't run or fell back, _initialSyncDone stays
+    // whatever it already was and the decision below proceeds unchanged.
+    const liveWriteDone = await _maybeRunSyncMerge('sign-in');
+    if (liveWriteDone) _initialSyncDone = true;
+  } else {
+    _maybeRunSyncMerge('sign-in').catch(() => {});
+  }
   if (!_initialSyncDone) {
     // Deduped: if a decision is already in flight (e.g. a near-simultaneous
     // manual sign-in tap and a background refresh both granted a token),
@@ -595,8 +617,8 @@ const SYNC_MERGE_LOG_PREFIX = '[sync-merge]';
 // prefixed so the console can be filtered for them. Warns if a store's
 // merged count is lower than BOTH its input counts — the shape of a merge
 // bug the shrink-detection backup wouldn't catch.
-function _logDryRunMergeSummary(trigger, stats) {
-  console.log(`${SYNC_MERGE_LOG_PREFIX} dry-run merge ready (trigger: ${trigger}, mode: ${_syncMergeMode})`);
+function _logSyncMergeSummary(trigger, stats) {
+  console.log(`${SYNC_MERGE_LOG_PREFIX} merge computed (trigger: ${trigger}, mode: ${_syncMergeMode})`);
   for (const storeName of ID_MERGED_STORES) {
     const s = stats[storeName];
     if (!s) continue;
@@ -611,45 +633,101 @@ function _logDryRunMergeSummary(trigger, stats) {
   console.log(`${SYNC_MERGE_LOG_PREFIX} orphanedHighlights=${stats.orphanedHighlights}`);
 }
 
+// Writes a merged result to THIS device's IndexedDB — same dbClear+dbPut
+// restore shape as syncFromDrive(), but sourced from the already-computed
+// `merged` object instead of a fresh Drive fetch. The 'deletions' store is
+// the one exception: its own 'id' field is a per-device autoIncrement
+// artifact (see openDB()'s v5 comment) never referenced by anything else,
+// so incoming rows are re-added stripped of their original id — letting
+// autoIncrement assign fresh ones avoids two devices' independently
+// auto-incremented deletion logs colliding on write.
+async function _writeMergedResultToLocal(merged) {
+  await dbClear('books');
+  await dbClear('highlights');
+  await dbClear('essays');
+  await dbClear('wishlist');
+  await dbClear('challenges');
+  await dbClear('essay_drafts');
+  await dbClear('deletions');
+  for (const b of merged.books)        await dbPut('books', b);
+  for (const h of merged.highlights)   await dbPut('highlights', h);
+  for (const e of merged.essays)       await dbPut('essays', e);
+  for (const w of merged.wishlist)     await dbPut('wishlist', w);
+  for (const c of merged.challenges)   await dbPut('challenges', c);
+  for (const d of merged.essay_drafts) await dbPut('essay_drafts', d);
+  for (const d of merged.deletions)    await dbPut('deletions', { store: d.store, recordId: d.recordId, deletedAt: d.deletedAt });
+  await dbSetMeta('waitlist-order', merged.waitlistOrder || []);
+  await dbSetMeta('wishlist-order', merged.wishlistOrder || []);
+  await dbSetMeta('fnr_rejected_forever', merged.fnrRejectedForever || []);
+  await loadData();
+  refreshCurrentView();
+}
+
+// Writes a merged result to the primary Drive file (PATCH — this is only
+// ever called with a fileId that _maybeRunSyncMerge already confirmed
+// exists). Same payload shape as syncToDrive(), plus fnrRejectedForever
+// (which syncToDrive's own payload does not currently include — a
+// pre-existing gap in that function, untouched here; this new write path
+// persists the full merged object it actually computed instead of
+// reproducing that gap).
+async function _writeMergedResultToDrive(fileId, merged) {
+  const payload = JSON.stringify({
+    books:              merged.books,
+    highlights:         merged.highlights,
+    essays:             merged.essays,
+    wishlist:           merged.wishlist,
+    challenges:         merged.challenges,
+    waitlistOrder:      merged.waitlistOrder,
+    wishlistOrder:      merged.wishlistOrder,
+    fnrRejectedForever: merged.fnrRejectedForever,
+    essay_drafts:       merged.essay_drafts,
+    deletions:          merged.deletions
+  });
+  return _driveMultipartRequest('PATCH', fileId, { name: DRIVE_FILE_NAME }, payload);
+}
+
 // Runs at each of the 3 trigger points (sign-in, tab becoming visible again,
 // immediately before every saveAndSync() push). Cheap on every call except
 // when Drive's modifiedTime has actually moved since this session last
 // observed it here — only then does it fetch the full Drive file and run
 // the real merge, so this does NOT add a full pull to every saveAndSync()
-// call site. In BOTH 'dry' and 'live' mode, the merge result itself is only
-// logged, then discarded — the actual live-mode write path doesn't exist
-// yet (a later step). Also in BOTH modes (Step 4 part one, widened from
-// live-only so the untested safety net gets real exercise before flipping
-// sync_merge_mode to 'live'): the pre-merge safety-net backup runs once per
-// session. It only reads the current Drive file and writes a timestamped
-// copy elsewhere in appDataFolder — it never touches local data or the live
-// Drive file, so running it in dry mode is exactly as safe as in live mode.
-// The existing push-or-pull path this runs alongside is completely untouched
-// by any of this. 'off' makes this an immediate no-op (no merge check AND no
-// backup rehearsal either).
-async function _maybeRunDryMergeCheck(trigger) {
-  if (_syncMergeMode === 'off') return;
-  if (!gapiReady || !gapi.client.getToken()) return; // nothing to check without a live token
+// call site. 'off' makes this an immediate no-op (no merge check, no backup,
+// no write).
+//
+// 'dry' mode: merge is computed and logged, the pre-merge backup is
+// exercised (v201), then the result is discarded — always returns false.
+//
+// 'live' mode (Step 4 part two): after the same backup succeeds, the merged
+// result is written to BOTH IndexedDB and the Drive file, replacing today's
+// push-or-pull decision for whichever trigger called this. If the backup
+// fails, OR the writes themselves fail, this returns false and does NOT
+// write anything — callers must fall back to today's push-or-pull behaviour
+// in that case (see saveAndSync()/_handleTokenResponse's callers below).
+// Returns true only once both writes have actually succeeded.
+async function _maybeRunSyncMerge(trigger) {
+  if (_syncMergeMode === 'off') return false;
+  if (!gapiReady || !gapi.client.getToken()) return false; // nothing to check without a live token
   let fileId;
   try {
     fileId = await _resolveDriveFileId();
   } catch (err) {
     console.warn(`${SYNC_MERGE_LOG_PREFIX} fileId lookup failed, skipping`, err);
-    return;
+    return false;
   }
-  if (!fileId) return; // no Drive file yet this session — nothing to merge against
+  if (!fileId) return false; // no Drive file yet this session — nothing to merge against
   let currentModifiedTime;
   try {
     currentModifiedTime = await _getDriveFileModifiedTime(fileId);
   } catch (err) {
     console.warn(`${SYNC_MERGE_LOG_PREFIX} modifiedTime check failed, skipping`, err);
-    return;
+    return false;
   }
   if (_mergeCheckLastModifiedTime !== undefined && currentModifiedTime === _mergeCheckLastModifiedTime) {
-    return; // Drive hasn't moved since this session last looked here — nothing to merge
+    return false; // Drive hasn't moved since this session last looked here — nothing to merge
   }
   _mergeCheckLastModifiedTime = currentModifiedTime;
 
+  let merged, stats;
   try {
     const res = await gapi.client.request({
       path:   `https://www.googleapis.com/drive/v3/files/${fileId}`,
@@ -658,22 +736,45 @@ async function _maybeRunDryMergeCheck(trigger) {
     });
     const remote = typeof res.result === 'string' ? JSON.parse(res.result) : res.result;
     const local  = await _buildLocalSnapshotForMergeCheck();
-    const { stats } = mergeLibrariesWithStats(local, remote);
-    _logDryRunMergeSummary(trigger, stats);
-    // Safety-net rehearsal (Step 4 part one) — runs in 'dry' mode too, not
-    // just 'live', so the backup's gating/fail-closed behaviour gets real
-    // exercise (and produces a real file you can check with
-    // listDriveBackups()) before sync_merge_mode is ever flipped to 'live'.
-    // No live-mode write exists yet for this to actually gate either way;
-    // this only proves the backup mechanism itself works end to end.
-    const backupOk = await _ensurePreMergeBackup(fileId);
-    if (!backupOk) {
-      console.warn(`${SYNC_MERGE_LOG_PREFIX} pre-merge backup failed this attempt — a real live-mode write would fall back to push-or-pull here`);
-    }
-    // Result is always discarded here — nothing is written to Drive or
-    // IndexedDB by this function, in either 'dry' or 'live' mode, in this step.
+    ({ merged, stats } = mergeLibrariesWithStats(local, remote));
+    _logSyncMergeSummary(trigger, stats);
   } catch (err) {
-    console.warn(`${SYNC_MERGE_LOG_PREFIX} dry-run merge failed`, err);
+    console.warn(`${SYNC_MERGE_LOG_PREFIX} merge computation failed`, err);
+    return false;
+  }
+
+  // Safety net: must succeed before ANY live write (or, in dry mode, is
+  // still exercised so it stays proven-working — see v201). Fails closed —
+  // a failed backup here means we fall back to today's push-or-pull.
+  const backupOk = await _ensurePreMergeBackup(fileId);
+  if (!backupOk) {
+    console.warn(`${SYNC_MERGE_LOG_PREFIX} pre-merge backup failed — not writing merged result, falling back to today's push-or-pull behaviour`);
+    return false;
+  }
+
+  if (_syncMergeMode !== 'live') {
+    // dry mode: result discarded, exactly as before.
+    return false;
+  }
+
+  try {
+    await _writeMergedResultToLocal(merged);
+    const writeRes = await _writeMergedResultToDrive(fileId, merged);
+    // Keep the v189 staleness guard's own baseline, and this function's own
+    // dedupe baseline, in sync with a write WE just performed — otherwise
+    // the very next syncToDrive() call would see Drive's modifiedTime as
+    // having "moved" (because of this write) and wrongly treat it as
+    // another tab/device having raced it, aborting as stale.
+    if (writeRes && writeRes.result && writeRes.result.modifiedTime) {
+      _cachedRemoteModifiedTime  = writeRes.result.modifiedTime;
+      _mergeCheckLastModifiedTime = writeRes.result.modifiedTime;
+    }
+    _cachedRemoteCount = merged.books.length + merged.highlights.length;
+    console.log(`${SYNC_MERGE_LOG_PREFIX} live merge write succeeded (trigger: ${trigger})`);
+    return true;
+  } catch (err) {
+    console.error(`${SYNC_MERGE_LOG_PREFIX} live merge write failed, falling back to today's push-or-pull behaviour`, err);
+    return false;
   }
 }
 
@@ -7272,7 +7373,7 @@ async function boot() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       _ensureFreshToken().catch(() => {});
-      _maybeRunDryMergeCheck('visibilitychange').catch(() => {});
+      _maybeRunSyncMerge('visibilitychange').catch(() => {});
     }
   });
   // Offline case: if the Google scripts never load at all (or never resolve),
