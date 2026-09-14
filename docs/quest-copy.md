@@ -356,3 +356,13 @@ New feature, unrelated to the Quest above: Settings → Data gets a way to see a
 > Books you've rejected. You can undo any of them here.
 
 **List heading:** none — deliberately omitted. The button label and description already establish what the list is and where it came from; a heading would repeat that a third time.
+
+### Batch 2 — per-row remove (new copy, no "before")
+
+**Remove control**, one per row: a text label, not an icon (an X would be ambiguous about direction on a list of already-rejected books).
+
+> Undo
+
+**aria-label**, includes the book's title so a screen reader on a list of identical labels isn't useless (e.g. for a row titled "Beloved"):
+
+> Undo Beloved

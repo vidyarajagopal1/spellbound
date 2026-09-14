@@ -6154,7 +6154,7 @@ async function loadSettings() {
   await renderFnrRejectedSettings();
 }
 
-// ─── SETTINGS: rejected-forever list (Batch 1 — read only) ───────────────────────
+// ─── SETTINGS: rejected-forever list (Batch 1 read + Batch 2 per-row remove) ──
 // Reads the same `fnr_rejected_forever` meta key fnrRejectResult()/
 // fnrUndoRejectResult() (docs/app.js, FNR section) write to. Entry point
 // (button + description) is hidden entirely from Settings > Data whenever
@@ -6163,8 +6163,7 @@ async function loadSettings() {
 // same session without needing a reload. Most-recently-rejected shown
 // first (the stored array is oldest-first, since fnrRejectResult() always
 // pushes to the end — reversed here for display only, storage order
-// untouched). Read-only for now: no per-row remove, no clear-all yet (see
-// Batches 2/3 in /memories/repo/fnr-rejected-settings.md).
+// untouched). Clear-all (Batch 3) not built yet.
 async function renderFnrRejectedSettings() {
   const list      = (await dbGetMeta('fnr_rejected_forever')) || [];
   const actionEl  = document.getElementById('fnr-rejected-action');
@@ -6184,14 +6183,20 @@ async function renderFnrRejectedSettings() {
   if (wrapEl) wrapEl.classList.add('hidden');
   if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'false');
 
+  _renderFnrRejectedRows(list);
+}
+
+function _renderFnrRejectedRows(list) {
   const listEl = document.getElementById('fnr-rejected-list');
-  if (listEl) {
-    listEl.innerHTML = [...list].reverse().map(b => `
+  if (!listEl) return;
+  listEl.innerHTML = [...list].reverse().map(b => `
       <div class="fnr-rejected-row">
-        <span class="fnr-rejected-title">${escapeHtml(b.title)}</span>
-        <span class="fnr-rejected-author">${escapeHtml(b.author || '')}</span>
+        <div class="fnr-rejected-text">
+          <span class="fnr-rejected-title">${escapeHtml(b.title)}</span>
+          <span class="fnr-rejected-author">${escapeHtml(b.author || '')}</span>
+        </div>
+        <button class="fnr-rejected-remove" data-title="${escapeHtml(b.title)}" data-author="${escapeHtml(b.author || '')}" onclick="removeFnrRejectedEntry(this)" aria-label="Undo ${escapeHtml(b.title)}">Undo</button>
       </div>`).join('');
-  }
 }
 
 function toggleFnrRejectedList() {
@@ -6200,6 +6205,30 @@ function toggleFnrRejectedList() {
   if (!wrap) return;
   const nowHidden = wrap.classList.toggle('hidden');
   if (btn) btn.setAttribute('aria-expanded', String(!nowHidden));
+}
+
+// Removes a single entry (no confirm — per explicit instruction, only
+// clearing the WHOLE list needs a confirm step). Reads title/author back
+// off the button's own dataset rather than inlining them into the onclick
+// string, so titles/authors containing quotes can't break the handler.
+// Updates the meta key, then either re-renders the remaining rows in place
+// (list stays open — the reader is actively working through it) or, if
+// that was the last entry, hides the whole Settings action block.
+async function removeFnrRejectedEntry(btn) {
+  const title  = btn.dataset.title;
+  const author = btn.dataset.author || '';
+  const key    = _fnrNormKey(title, author);
+
+  let list = (await dbGetMeta('fnr_rejected_forever')) || [];
+  list = list.filter(b => _fnrNormKey(b.title, b.author) !== key);
+  await dbSetMeta('fnr_rejected_forever', list);
+
+  if (list.length === 0) {
+    const actionEl = document.getElementById('fnr-rejected-action');
+    if (actionEl) actionEl.classList.add('hidden');
+  } else {
+    _renderFnrRejectedRows(list);
+  }
 }
 
 async function saveSettings() {

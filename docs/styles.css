@@ -2608,12 +2608,19 @@ button.medium-btn.active {
 }
 .fnr-rejected-row {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 10px 12px;
   border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 .fnr-rejected-row:last-child { border-bottom: none; }
+.fnr-rejected-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 .fnr-rejected-title {
   font-size: 0.85rem;
   color: var(--text);
@@ -2621,6 +2628,23 @@ button.medium-btn.active {
 .fnr-rejected-author {
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+.fnr-rejected-remove {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+}
+.fnr-rejected-remove:active {
+  opacity: 0.7;
+  color: var(--text);
+  border-color: rgba(255,255,255,0.28);
 }
 .settings-save-msg {
   margin-top: 0.6rem;
