@@ -142,7 +142,14 @@ async function dbDeleteDraft(id) {
 
 function newDraftTemplate() {
   return {
-    // id assigned by IndexedDB on first save
+    // Collision-resistant id assigned up front via nextId(), same as every
+    // other store (books/highlights/essays/wishlist/challenges) — this store
+    // used to rely on IndexedDB's own autoIncrement instead, which produces
+    // small sequential integers that can easily collide across two devices
+    // creating a draft offline. Existing drafts saved before this change
+    // keep whatever autoIncrement id they already have; only NEW drafts get
+    // an id from here.
+    id: nextId(),
     step:  2,
     stage: 1,
 
