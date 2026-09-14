@@ -254,6 +254,32 @@ so the reader-facing wording can't drift call to call. Three states:
   feature's copy, UI text, or code — always "a book or an author". This
   corrects the merged prompt label's original slash form above.
 
+### Surprise pill (Batch B)
+
+A standalone pill, not a member of the genre pills group, sitting below the
+genre block:
+
+> Or if you'd rather be surprised...
+>
+> `Help me break my usual pattern`
+
+Selecting it clears (values, not just appearance) and disables the genre
+pills, the custom-genre input, the reference field, and the follow-up notes
+field. The avoid field stays live and enabled. Deselecting re-enables
+everything; cleared values do not return.
+
+**Message, shown under the pill while selected:**
+
+> We've cleared the rest. Just tell us what to avoid, if anything.
+
+It does not fade — it stays visible for as long as the pill is selected, so
+someone scrolling back up understands why the fields above are empty.
+
+Because a reference can no longer coexist with the surprise pill, rule 4's
+exactly-two-books-by-author requirement (which only ever fires from a
+resolved reference) and the surprise instruction can never both apply to the
+same request.
+
 ### Failure
 
 > We couldn't reach the service. Check your connection and try Find Your Next Read from the Wishlist tab.

@@ -4257,6 +4257,7 @@ CRITICAL RULES:
 7. Only recommend real, verifiable books. Author name and first-publication year must be factually correct. If you are not certain a title genuinely exists with that author, do not use it — choose a different, real book you are certain about instead. Never invent a title.
 8. Recency: when nothing in the request signals a preference for older/classic/vintage work, favor including 1–2 more recently published titles (roughly the last several years) among the 5. When the request signals a classic, vintage, or historical preference (e.g. genre is historical fiction, or the reader's text mentions "classic"/"old"/similar), do not force recency — pick what genuinely fits instead.
 9. Use the VARIETY TOKEN only to vary which valid, request-satisfying candidates you surface when there are multiple equally good options — never as a reason to pick something that doesn't fit the request, and never mention it in your output.
+10. SURPRISE MODE: If the READER'S REQUEST contains "SURPRISE ME", the reader has deliberately skipped genre and reference so you can break from their usual pattern. In this mode, the TASTE CALIBRATION block is not a target to satisfy — read it strictly as a description of what to move away from: the genres, tones, and authors it reflects are what all 5 picks must diverge from, never what they should resonate with. Concretely: none of the 5 authors may already appear in the TASTE CALIBRATION profile. All 5 recommendations must be off-pattern — not one or two divergent picks propped up by three familiar ones. The EXCLUDE LIST and any AVOID text still apply in full. This overrides rule 6's fallback: the "SURPRISE ME" line itself is the specific signal to cite in "why_it_fits" — name what the pick departs from (a genre, tone, or author absent from the reader's calibration profile), never what it resonates with. Do not cite a calibration-profile book or highlight as justification in this mode.
 
 RESPONSE FORMAT — return this exact JSON structure:
 {
@@ -4410,6 +4411,8 @@ function _fnrClearFormFields() {
   document.getElementById('fnr-reference').value         = '';
   document.getElementById('fnr-reference-notes').value   = '';
   document.getElementById('fnr-avoid').value              = '';
+  document.getElementById('fnr-surprise-pill').classList.remove('active');
+  _fnrSetSurpriseMode(false);
 }
 
 function fnrBack() {
@@ -4458,6 +4461,44 @@ function fnrTogglePill(btn, containerId, max, customInputId) {
   }
 }
 
+// Standalone surprise pill — NOT a member of the genre pills group (no cap,
+// no place in fnrTogglePill's logic). Selecting it clears (values, not just
+// appearance) and disables the genre pills, the custom-genre input, the
+// reference field and the follow-up notes field, leaving only the avoid
+// field live. Deselecting re-enables everything; cleared values never come
+// back. Disabled native <button>/<input>/<textarea> elements don't dispatch
+// click/input events, so no extra guard is needed elsewhere to keep a
+// disabled field's value out of _fnrFormState/the payload — but the values
+// are explicitly zeroed here too, not left to rely on that alone.
+function fnrToggleSurprise(btn) {
+  const active = !btn.classList.contains('active');
+  btn.classList.toggle('active', active);
+  _fnrSetSurpriseMode(active);
+}
+
+function _fnrSetSurpriseMode(active) {
+  const genreContainer  = document.getElementById('fnr-genre-pills');
+  const customGenre     = document.getElementById('fnr-custom-genre');
+  const reference       = document.getElementById('fnr-reference');
+  const referenceNotes  = document.getElementById('fnr-reference-notes');
+  const message         = document.getElementById('fnr-surprise-message');
+
+  if (active) {
+    genreContainer.querySelectorAll('.fnr-pill.active').forEach(b => b.classList.remove('active'));
+    customGenre.value = '';
+    customGenre.classList.add('hidden');
+    reference.value = '';
+    referenceNotes.value = '';
+  }
+
+  genreContainer.querySelectorAll('.fnr-pill').forEach(b => { b.disabled = active; });
+  customGenre.disabled    = active;
+  reference.disabled      = active;
+  referenceNotes.disabled = active;
+
+  message.classList.toggle('hidden', !active);
+}
+
 // ── Form save / restore ───────────────────────────────────────────────────────
 
 function _fnrSaveFormState() {
@@ -4468,6 +4509,7 @@ function _fnrSaveFormState() {
     reference:      document.getElementById('fnr-reference').value,
     referenceNotes: document.getElementById('fnr-reference-notes').value,
     avoid:         document.getElementById('fnr-avoid').value,
+    surprise:      document.getElementById('fnr-surprise-pill').classList.contains('active'),
   };
 }
 
@@ -4487,6 +4529,8 @@ function _fnrRestoreForm() {
   document.getElementById('fnr-reference').value       = s.reference;
   document.getElementById('fnr-reference-notes').value = s.referenceNotes;
   document.getElementById('fnr-avoid').value         = s.avoid;
+  document.getElementById('fnr-surprise-pill').classList.toggle('active', !!s.surprise);
+  _fnrSetSurpriseMode(!!s.surprise);
 }
 
 // ── User context builder ──────────────────────────────────────────────────────
@@ -4621,6 +4665,13 @@ function _fnrFormatTitleList(items) {
 }
 
 function _fnrBuildExplicitRequestBlock(s) {
+  if (s.surprise) {
+    return [
+      `SURPRISE ME: the reader deliberately skipped genre and reference so you can break from their usual pattern.`,
+      s.avoid ? `AVOID: ${s.avoid}` : '',
+    ].filter(Boolean).join('\n');
+  }
+
   const genreLabels   = (s.genres || []).filter(v => v !== 'something_else')
     .map(v => FNR_GENRES.find(g => g.value === v)?.label).filter(Boolean);
 

@@ -2915,6 +2915,29 @@ button.medium-btn.active {
   box-shadow: 0 0 0 3px rgba(219, 80, 96, 0.18);
 }
 .fnr-pill:not(.active):active { background: var(--surface2); }
+.fnr-pill:disabled,
+.fnr-text-input:disabled,
+.fnr-textarea:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Surprise pill (standalone, not part of the genre pills group) */
+.fnr-surprise-block {
+  margin-bottom: 2.5rem;
+}
+.fnr-surprise-message {
+  font-size: 0.82rem;
+  color: var(--text);
+  background: rgba(219, 80, 96, 0.08);
+  border: 1px solid rgba(219, 80, 96, 0.25);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 12px;
+  line-height: 1.5;
+}
+.fnr-surprise-message.hidden { display: none; }
 
 /* Error & Submit */
 .fnr-error {
