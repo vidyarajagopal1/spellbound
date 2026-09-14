@@ -29,6 +29,7 @@ const DRIVE_BACKUP_PREFIX    = 'spellbound-data-backup-';
 const DRIVE_PREMERGE_BACKUP_PREFIX = 'spellbound-premerge-backup-';
 const PREMERGE_BACKUP_KEEP_COUNT   = 3; // "at least the last three" — these are the ones actually meant to be restored from
 const SILENT_SIGNIN_TIMEOUT_MS = 8000; // if a silent (prompt:'') token request never calls back at all (seen with blocked third-party cookies etc.), stop waiting after this long
+const SYNC_MERGE_TIMEOUT_MS = 15000; // _maybeRunSyncMerge() chains several sequential Drive API calls (file lookup, modifiedTime check, fetch+merge, pre-merge backup, final write) with no per-call timeout of its own; if any one of them stalls (flaky connection), _maybeRunSyncMergeGuarded() below stops waiting after this long instead of leaving callers/#sync-status stuck on "Syncing…" forever
 let _tokenExpiresAt      = 0;     // epoch ms; 0 = no token / unknown expiry yet
 let _tokenRefreshPromise = null;  // in-flight silent refresh, deduped across callers
 let _pendingTokenResolve = null;  // resolves whichever call is awaiting the in-flight refresh
@@ -320,11 +321,11 @@ async function saveAndSync() {
     // this IS "replacing the push-or-pull decision" for this call site. If
     // it didn't run or fell back (no Drive file yet, backup failed, write
     // failed), today's push still happens exactly as before.
-    const liveWriteDone = await _maybeRunSyncMerge('saveAndSync');
+    const liveWriteDone = await _maybeRunSyncMergeGuarded('saveAndSync');
     if (liveWriteDone) return;
     syncToDrive().catch(() => {});
   } else {
-    _maybeRunSyncMerge('saveAndSync').catch(() => {});
+    _maybeRunSyncMergeGuarded('saveAndSync').catch(() => {});
     syncToDrive().catch(() => {});
   }
 }
@@ -430,10 +431,10 @@ async function _handleTokenResponse(resp) {
     // clobber the merge write with a plain push/pull immediately after).
     // If the merge didn't run or fell back, _initialSyncDone stays
     // whatever it already was and the decision below proceeds unchanged.
-    const liveWriteDone = await _maybeRunSyncMerge('sign-in');
+    const liveWriteDone = await _maybeRunSyncMergeGuarded('sign-in');
     if (liveWriteDone) _initialSyncDone = true;
   } else {
-    _maybeRunSyncMerge('sign-in').catch(() => {});
+    _maybeRunSyncMergeGuarded('sign-in').catch(() => {});
   }
   if (!_initialSyncDone) {
     // Deduped: if a decision is already in flight (e.g. a near-simultaneous
@@ -778,6 +779,45 @@ async function _maybeRunSyncMerge(trigger) {
     console.error(`${SYNC_MERGE_LOG_PREFIX} live merge write failed, falling back to today's push-or-pull behaviour`, err);
     updateSyncStatus('Sync failed', true);
     return false;
+  }
+}
+
+// Watchdog wrapper around _maybeRunSyncMerge() — same rationale as
+// _requestSilentToken()'s SILENT_SIGNIN_TIMEOUT_MS watchdog above: the real
+// function chains multiple sequential Drive network requests with no
+// per-call timeout, so a single stalled request (e.g. the final Drive PATCH
+// in _writeMergedResultToDrive, on a flaky connection) could otherwise leave
+// every caller awaiting it forever, freezing #sync-status on "Syncing…"
+// indefinitely — previously only recoverable by force-closing the app. This
+// is the only change made; _maybeRunSyncMerge() itself (and everything it
+// calls — the merge computation, the pre-merge backup, the actual writes)
+// is untouched, same as every other change in this file's sync-merge work.
+// Does NOT cancel the underlying request — it only stops WAITING for it. If
+// the real call later resolves after the timeout already fired (and a
+// caller has since moved on to its own push/pull fallback), its own status
+// update may still land afterwards and overwrite whatever the fallback path
+// already showed — a rare, cosmetic-only race (mirrors the same accepted
+// trade-off _requestSilentToken's watchdog already makes for the token
+// request itself), not a data-safety issue: no write happens in the
+// timeout branch itself, and the real call still runs its own backup and
+// staleness handling exactly as before, whichever finishes first.
+async function _maybeRunSyncMergeGuarded(trigger) {
+  let timeoutId;
+  const timeout = new Promise(resolve => {
+    timeoutId = setTimeout(() => {
+      console.warn(`${SYNC_MERGE_LOG_PREFIX} timed out after ${SYNC_MERGE_TIMEOUT_MS}ms (trigger: ${trigger}) — giving up waiting, falling back to today's push-or-pull behaviour`);
+      updateSyncStatus('Sync failed', true);
+      resolve(false);
+    }, SYNC_MERGE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([_maybeRunSyncMerge(trigger), timeout]);
+  } catch (err) {
+    console.warn(`${SYNC_MERGE_LOG_PREFIX} unexpected error (trigger: ${trigger})`, err);
+    updateSyncStatus('Sync failed', true);
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -7347,7 +7387,7 @@ async function boot() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       _ensureFreshToken().catch(() => {});
-      _maybeRunSyncMerge('visibilitychange').catch(() => {});
+      _maybeRunSyncMergeGuarded('visibilitychange').catch(() => {});
     }
   });
   // Offline case: if the Google scripts never load at all (or never resolve),
