@@ -876,4 +876,102 @@ A sustained hardening pass on Google sign-in and Drive sync, prompted by reports
 | v188 | Fixed duplicate book entries: hard submit-time guard on Add Book; duplicate check added to Quest/Find Your Next Read's search-add |
 | v189 | Added a Drive modifiedTime staleness guard to detect (not merge) another tab/device overwriting a Drive save |
 
+---
+
+## Goodreads Star Ratings (v190)
+- Goodreads CSV imports now also parse the "My Rating" column (1–5 stars, or none) into a new `grRating` field, stored alongside — but never overwriting — the book's own separate four-level `rating` field
+- Find Your Next Read's taste-calibration context gets a new, capped, `grRating`-sorted "Books rated 4–5 stars on Goodreads at import" block, placed after the top-rated block and excluding anything already listed there, explicitly labelled as a weaker signal than the reader's own in-app ratings
+- Never surfaced anywhere else in the UI
+
+## Quest: Access & Importer Fixes (v191)
+Five related fixes to the First-Run Quest, gathered from testing feedback:
+- Stage 1 unified to a single prompt ("What's the last book you finished?") for everyone — the old importer-only grid variant and its "most recent from your import" copy were dropped, since no copy claims recency anymore. The importer grid still only appears for readers with a Goodreads import, alongside an unconditional search field for everyone
+- Dropped the requirement that an imported book have a "Date Read" before it counts as a Stage 1/3 candidate — many Goodreads exports leave that column blank, which was hiding readers' entire import from the grid
+- Stage 3's re-read grid is capped at 12 tiles when unfiltered (typing a filter still searches the full, uncapped list)
+- Home gets a new "Need help setting up?" entry point into the quest, shown only to readers with no manually-added books who haven't already completed the quest
+- The quest intro screen's second line now has an importer-specific variant acknowledging the Goodreads import directly, instead of one line for everyone
+
+## Your Reading Trail — Home Section (v192–v193)
+- **v192**: added a new "Your Reading Trail" section to Home, showing the most recently completed books (dated ones first), using the same cover-tile markup as Currently Reading
+- **v193**: reduced the number of books shown from 5 to 3 — 5 always left an orphaned second row on the phone-width grid; 3 fills exactly one row
+
+## Multi-Device Sync Foundation — Step 1 (v194)
+The first step of a longer project to make Drive sync eventually safe to merge across two devices (rather than only detect staleness, which is all v189 does). Deliberately pure foundation — no change to what `syncToDrive`/`syncFromDrive` actually decide to do.
+- Record ids for new items switched from a simple incrementing counter to a collision-resistant time+random scheme (safe across two devices creating records offline at the same time), with a same-millisecond collision guard for bulk imports
+- New `deletions` tombstone log (its own IndexedDB store) — every delete across books, highlights, essays, wishlist, and challenges now also records a `{store, recordId, deletedAt}` entry, so a future merge can tell "deleted on purpose" apart from "never existed on that device"
+- `updatedAt` timestamps, previously only reliably set on a few record types, are now stamped on every create/edit across every store, with a one-time backfill for older records missing it
+- Both the new deletions log and the timestamp discipline are already included in Drive exports and backups, but `syncFromDrive()` itself doesn't read the deletions log back yet — that comes with the actual merge logic in a later step
+- Requested persistent browser storage on load (best-effort, no UI) so the browser is less likely to silently evict IndexedDB data under storage pressure
+
+## Search & Data-Entry Fixes (v195–v197)
+- **v195**: fixed a book search bug where a query consisting only of a stopword fragment (e.g. typing "The" as the start of "The Correspondent") returned no results at all, instead of waiting for more input
+- **v196**: the Add Book duplicate-title nudge now appears while typing (debounced), not only when the title field loses focus
+- **v197**: fixed Add Highlight silently failing to submit when opened from a book's own detail page — a hidden-but-required select element was blocking the browser's native form validation with no visible error
+
+## Multi-Device Sync Foundation — Steps 2–4 (v198–v204)
+Continuing the sync foundation from v194, building toward a real cross-device merge.
+- **v198**: built a standalone, pure `mergeLibraries()` function (union-by-id, newer `updatedAt` wins, tombstoned ids always dropped, orphaned highlights counted rather than silently discarded) plus a console verification runner — not yet called from anywhere in the live app. Also fixed a real gap found while building it: essay drafts were still using plain auto-incrementing ids, which two devices could collide on; they now get the same collision-resistant ids as everything else
+- **v199**: wired the merge function into three real trigger points (sign-in, save, tab becoming visible again), but only in dry-run mode — it fetches, merges, and logs a summary, then discards the result. Nothing is written anywhere yet
+- **v200**: added an unconditional pre-merge Drive backup as a safety net for the eventual live write, plus console-only recovery helpers to list and restore from any backup
+- **v201**: fixed that safety-net backup never actually running in practice, since it was gated behind live mode, which had never been turned on — now it also runs (and is exercised) during the existing dry-run mode
+- **v202**: live mode now actually writes — when enabled, a successful merge writes the combined result to both Drive and local storage, replacing the old plain push-or-pull decision for that attempt; dry-run mode's behavior is unchanged
+- **v203**: any device that has never explicitly configured a sync mode now defaults to live merge mode instead of dry-run
+- **v204**: fixed the sync status text getting stuck on "Tap to sign in" after a successful live-mode merge — the old push/pull code was the only thing that ever updated that status text, and live-mode merges skip that code entirely once they succeed
+
+## Find Your Next Read — Form Restructuring & Surprise Mode (v205–v212)
+- **v205**: cut the form from six prompts to three — genre, a merged "book or author" reference question, and the existing avoid prompt (the old separate mood and reading-context prompts were removed entirely). Added a one-time resolution line above results ("We read that as…") summarizing what the AI understood from the reference field
+- **v206**: fixed several rough edges found after v205 shipped — reference resolution for full names, how an author's name is represented back to the reader, a guard against the resolution line's own copy drifting, form state getting lost on reopen, a missing intro line, and follow-up-question label styling
+- **v207**: capped recommendations drawn from a resolved reference author at exactly 2 of the 5 results, instead of treating that as a minimum
+- **v208**: added a "Surprise me" pill — selecting it clears and disables the genre and reference fields (the avoid field stays live) and adds a matching instruction to the AI prompt so all 5 results deliberately diverge from the reader's usual taste
+- **v209–v212**: four rounds of visual refinement on the surprise pill — a prompt-style lead-in line with a wider, banded/centered layout; repositioning it after the reference question with a left-aligned block and trimmed genre support text; removing the banded/tinted container in favor of a plain left-aligned label; and finally an italic lead-in with the pill sized to its own text instead of full width
+
+## Multi-Device Sync Foundation — Watchdog Fix (v213)
+- Fixed the sync status text getting stuck on "Syncing…" indefinitely, requiring a force-close to recover. The live-mode merge chain (from v202) makes five sequential Drive API calls with no timeout on any of them — a stalled connection during the final write left the whole chain hanging forever. Added a 15-second watchdog around the merge chain that falls back to the normal failure path if it doesn't finish in time
+
+## Settings — Rejected Recommendations List (v214)
+- Settings → Data gets a new, collapsible "Books we've stopped suggesting" entry — a list of every book permanently rejected via Find Your Next Read's Reject action, previously visible nowhere once its results card scrolled away
+- Hidden entirely from Settings whenever the list is empty; each row gets its own "Undo" button that removes just that one entry (no confirmation needed) and makes the book eligible for recommendation again immediately
+- Read-only viewing and per-row removal only — no bulk "clear all" was added, since per-row Undo already covers the real use case
+
+## Settings — Data Promoted to Top, Credential Fields Collapsed (v215–v216)
+Settings was opening with three optional, developer-only credential fields (AI access code, AI provider, AI API key, Google Books API key) before the Data section readers actually use.
+- **v215**: moved the Data section (Export, Import from Goodreads, Re-sort categories with AI, rejected-recommendations list) to the top of Settings. Also removed "Clear categories on original Goodreads import" entirely — a one-off migration hardcoded to one exact historical batch of 62 books that could never do anything for any other reader
+- **v216**: replaced the separate "AI Assistant" and "Book Lookup" sections with one collapsed-by-default "Keys and codes" section at the bottom of Settings, holding all four credential fields plus their existing descriptive text. The two previously-separate Save buttons (which already saved all four fields together regardless of which was clicked) were merged into one
+
+## Find Your Next Read — Stale Rejected-Slot Fix (v217)
+- Fixed a bug where resubmitting the form via "Edit Preferences" (without leaving the results screen entirely) could show a brand-new result card as already-rejected, with no reject action taken on it. The dimmed/Undo visual state was tracked by result-card position rather than by book identity, and that position tracking was only ever cleared on a fresh open of Find Your Next Read, not on an in-place resubmit — whatever book happened to land in a previously-rejected slot inherited the stale mark. The reject list that actually excludes books from recommendations was unaffected; this was a cosmetic display bug only
+
+---
+
+| Version | Changes |
+|---|---|
+| v190 | Goodreads star ratings (`grRating`) imported and surfaced as a secondary signal in Find Your Next Read's taste calibration |
+| v191 | Quest: unified Stage 1 to one prompt, dropped the dateCompleted requirement for importer candidates, capped Stage 3's grid at 12 when unfiltered, added a Home entry point + completion marker, importer-specific intro line |
+| v192 | Added "Your Reading Trail" section to Home, showing the most recently completed books |
+| v193 | Reading Trail cap changed from 5 to 3 books to avoid an orphaned grid row on phone widths |
+| v194 | Multi-device sync foundation, Step 1: collision-resistant record ids, `updatedAt` stamped everywhere, a deletions tombstone log, persistent storage request |
+| v195 | Fixed a book search bug where a stopword-only fragment silently truncated a longer query and returned nothing |
+| v196 | Add Book's duplicate-title check now surfaces while typing, not only on field blur |
+| v197 | Fixed Add Highlight silently failing to submit from a book's detail page (a hidden required field blocked native form validation) |
+| v198 | Sync foundation, Step 2: essay drafts switched to collision-resistant ids; added a standalone, unwired `mergeLibraries()` function + a console verification runner |
+| v199 | Sync foundation, Step 3: wired the merge function into sign-in/save/visibility-change triggers, dry-run only |
+| v200 | Sync foundation, Step 4 (part one): added an unconditional pre-merge Drive backup safety net; no live writes yet |
+| v201 | Fixed the pre-merge backup never actually running, since it was gated behind live mode, which had never been enabled |
+| v202 | Sync foundation, Step 4 (part two): live mode now writes the merged result to Drive and local storage |
+| v203 | Default `sync_merge_mode` changed from dry-run to live for any device that has never explicitly set it |
+| v204 | Fixed sync status text getting stuck on "Tap to sign in" after a successful live-mode merge |
+| v205 | Find Your Next Read form cut from six prompts to three; merged book/author reference; added a "We read that as…" resolution line |
+| v206 | Fixed reference-resolution edge cases, reopen-state loss, a missing intro line, and follow-up label styling |
+| v207 | Find Your Next Read: capped books by a resolved reference author at exactly 2 of 5 results |
+| v208 | Added a "Surprise me" pill that clears/disables the genre and reference fields, plus a matching AI prompt rule |
+| v209 | Surprise pill visual promotion: prompt-style lead-in, wider pill, banded/centered layout |
+| v210 | Repositioned the surprise pill after the reference question, left-aligned the block, trimmed genre support text |
+| v211 | Left-aligned the surprise pill's own label, removed its banded/tinted container |
+| v212 | Restyled the surprise pill's lead-in to italic, sized the pill to its own text |
+| v213 | Fixed sync status getting stuck on "Syncing…" forever via a 15-second watchdog around the merge write chain |
+| v214 | Settings → Data: new "Books we've stopped suggesting" list for Find Your Next Read's permanently-rejected books, with per-row Undo |
+| v215 | Settings: Data section moved to the top; removed a one-off Goodreads category-cleanup tool that could only ever run once |
+| v216 | Settings: collapsed AI Assistant/Book Lookup credential fields into one "Keys and codes" section; merged their two Save buttons into one |
+| v217 | Fixed Find Your Next Read showing the wrong result card as already-rejected after an in-place resubmit (stale slot-position state) |
+
 
