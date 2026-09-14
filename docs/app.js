@@ -32,6 +32,14 @@ let _initialSyncPromise  = null;  // the decision's in-flight promise, deduped a
 let _cachedDriveFileId   = undefined; // undefined = not yet resolved this session; null = resolved, no file exists yet; string = known id
 let _cachedRemoteCount   = null;      // last known books+highlights count of the remote file, or null if not yet known this session
 let _cachedRemoteModifiedTime = undefined; // undefined = no baseline yet this session; string = modifiedTime observed on the last successful staleness check or push this session — see syncToDrive()'s staleness guard
+// sync_merge_mode ('off'|'dry'|'live'), read once at boot from the meta
+// store — see _maybeRunDryMergeCheck() below for what each value does.
+let _syncMergeMode = 'dry';
+// Session-scoped "last observed" Drive modifiedTime dedicated to the merge
+// check only — deliberately separate from _cachedRemoteModifiedTime (which
+// belongs solely to syncToDrive()'s v189 staleness guard and must not be
+// touched by anything else). undefined = not observed yet this session.
+let _mergeCheckLastModifiedTime = undefined;
 let _authState           = 'unknown'; // 'unknown' | 'signed-in' | 'signed-out'
 let _pendingOfflineEdit  = false;     // an edit happened while auth state was still 'unknown'
 let _resolveInitialLoad;
@@ -294,6 +302,7 @@ async function _localRecordCount() {
 
 async function saveAndSync() {
   await loadData();
+  _maybeRunDryMergeCheck('saveAndSync').catch(() => {});
   syncToDrive().catch(() => {});
 }
 
@@ -391,6 +400,7 @@ async function _handleTokenResponse(resp) {
   localStorage.setItem(GOOGLE_SIGNIN_FLAG_KEY, '1');
   setLoggedInUI(true);
   _setAuthState('signed-in');
+  _maybeRunDryMergeCheck('sign-in').catch(() => {});
   if (!_initialSyncDone) {
     // Deduped: if a decision is already in flight (e.g. a near-simultaneous
     // manual sign-in tap and a background refresh both granted a token),
@@ -550,6 +560,92 @@ async function _getDriveFileModifiedTime(fileId) {
     params: { fields: 'modifiedTime' }
   });
   return res.result.modifiedTime || null;
+}
+
+// ─── SYNC MERGE (Step 3 — dry-run wiring only) ─────────────────────────────
+// Builds the same export-shaped snapshot syncToDrive() sends, straight from
+// the in-memory arrays + IndexedDB meta/stores. Deliberately duplicated here
+// rather than factored out of syncToDrive() itself, which must stay
+// byte-for-byte untouched in this step.
+async function _buildLocalSnapshotForMergeCheck() {
+  const waitlistOrder      = await dbGetMeta('waitlist-order') || [];
+  const wishlistOrder      = await dbGetMeta('wishlist-order') || [];
+  const fnrRejectedForever = await dbGetMeta('fnr_rejected_forever') || [];
+  const essay_drafts       = await dbGetAll('essay_drafts');
+  const deletions          = await dbGetAll('deletions');
+  return { books, highlights, essays, wishlist, challenges, waitlistOrder, wishlistOrder, fnrRejectedForever, essay_drafts, deletions };
+}
+
+const SYNC_MERGE_LOG_PREFIX = '[sync-merge]';
+
+// Logs one line per ID_MERGED_STORES entry (books/highlights/essays/
+// wishlist/challenges/essay_drafts) plus the orphaned-highlights count, all
+// prefixed so the console can be filtered for them. Warns if a store's
+// merged count is lower than BOTH its input counts — the shape of a merge
+// bug the shrink-detection backup wouldn't catch.
+function _logDryRunMergeSummary(trigger, stats) {
+  console.log(`${SYNC_MERGE_LOG_PREFIX} dry-run merge ready (trigger: ${trigger}, mode: ${_syncMergeMode})`);
+  for (const storeName of ID_MERGED_STORES) {
+    const s = stats[storeName];
+    if (!s) continue;
+    console.log(
+      `${SYNC_MERGE_LOG_PREFIX} ${storeName}: local=${s.localCount} remote=${s.remoteCount} merged=${s.mergedCount} ` +
+      `localOnly=${s.localOnly} remoteOnly=${s.remoteOnly} conflictsToLocal=${s.conflictsResolvedLocal} conflictsToRemote=${s.conflictsResolvedRemote}`
+    );
+    if (s.mergedCount < s.localCount && s.mergedCount < s.remoteCount) {
+      console.warn(`${SYNC_MERGE_LOG_PREFIX} WARNING: ${storeName} merged count (${s.mergedCount}) is lower than BOTH local (${s.localCount}) and remote (${s.remoteCount}) — check for a merge bug`);
+    }
+  }
+  console.log(`${SYNC_MERGE_LOG_PREFIX} orphanedHighlights=${stats.orphanedHighlights}`);
+}
+
+// Runs at each of the 3 trigger points (sign-in, tab becoming visible again,
+// immediately before every saveAndSync() push). Cheap on every call except
+// when Drive's modifiedTime has actually moved since this session last
+// observed it here — only then does it fetch the full Drive file and run
+// the real merge, so this does NOT add a full pull to every saveAndSync()
+// call site. In 'dry' mode (and, for now, 'live' too — its actual write
+// path doesn't exist yet, a future step) the merge result is only logged,
+// then discarded; the existing push-or-pull path this runs alongside is
+// completely untouched by it. 'off' makes this an immediate no-op.
+async function _maybeRunDryMergeCheck(trigger) {
+  if (_syncMergeMode === 'off') return;
+  if (!gapiReady || !gapi.client.getToken()) return; // nothing to check without a live token
+  let fileId;
+  try {
+    fileId = await _resolveDriveFileId();
+  } catch (err) {
+    console.warn(`${SYNC_MERGE_LOG_PREFIX} fileId lookup failed, skipping`, err);
+    return;
+  }
+  if (!fileId) return; // no Drive file yet this session — nothing to merge against
+  let currentModifiedTime;
+  try {
+    currentModifiedTime = await _getDriveFileModifiedTime(fileId);
+  } catch (err) {
+    console.warn(`${SYNC_MERGE_LOG_PREFIX} modifiedTime check failed, skipping`, err);
+    return;
+  }
+  if (_mergeCheckLastModifiedTime !== undefined && currentModifiedTime === _mergeCheckLastModifiedTime) {
+    return; // Drive hasn't moved since this session last looked here — nothing to merge
+  }
+  _mergeCheckLastModifiedTime = currentModifiedTime;
+
+  try {
+    const res = await gapi.client.request({
+      path:   `https://www.googleapis.com/drive/v3/files/${fileId}`,
+      method: 'GET',
+      params: { alt: 'media' }
+    });
+    const remote = typeof res.result === 'string' ? JSON.parse(res.result) : res.result;
+    const local  = await _buildLocalSnapshotForMergeCheck();
+    const { stats } = mergeLibrariesWithStats(local, remote);
+    _logDryRunMergeSummary(trigger, stats);
+    // Result is always discarded here — nothing is written to Drive or
+    // IndexedDB by this function, in either 'dry' or 'live' mode, in this step.
+  } catch (err) {
+    console.warn(`${SYNC_MERGE_LOG_PREFIX} dry-run merge failed`, err);
+  }
 }
 
 async function _driveMultipartRequest(method, fileId, metaObj, payloadString) {
@@ -6999,6 +7095,9 @@ async function boot() {
     await openDB();
     await loadData();
     await _backfillMissingUpdatedAt();
+    // No UI for this yet — set via console with dbSetMeta('sync_merge_mode',
+    // 'off'|'dry'|'live') then reload. Defaults to 'dry' when unset.
+    _syncMergeMode = (await dbGetMeta('sync_merge_mode')) || 'dry';
   } catch (err) {
     // _initialLoadPromise is a hard gate on every sync path (syncToDrive/
     // syncFromDrive/_handleTokenResponse all await it) — it must resolve no
@@ -7021,6 +7120,7 @@ async function boot() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       _ensureFreshToken().catch(() => {});
+      _maybeRunDryMergeCheck('visibilitychange').catch(() => {});
     }
   });
   // Offline case: if the Google scripts never load at all (or never resolve),
