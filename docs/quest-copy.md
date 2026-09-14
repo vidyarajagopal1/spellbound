@@ -366,3 +366,25 @@ New feature, unrelated to the Quest above: Settings → Data gets a way to see a
 **aria-label**, includes the book's title so a screen reader on a list of identical labels isn't useless (e.g. for a row titled "Beloved"):
 
 > Undo Beloved
+
+---
+
+## Settings — Advanced section (collapsing credential fields)
+
+New restructuring, unrelated to the Quest above: the AI Assistant and Book Lookup sections (access code, AI provider, AI API key, Google Books API key — all developer escape hatches, none required) collapse behind one collapsed-by-default section at the bottom of Settings. No field behavior changes, only where they live. Plan: /memories/repo/settings-advanced-section.md.
+
+**Section label** (new — there was no single container before; this replaces the two separate "AI Assistant" / "Book Lookup" headers):
+
+> Keys and codes
+
+**Intro line above the fields:** none. The two existing paragraphs below already explain each field group.
+
+**The two existing descriptive paragraphs:** unchanged wording, only relocated (moved inside the new section, each staying above its own field group, same relative order as today):
+
+> AI features work out of the box — no setup needed. The fields below are entirely optional. Nothing here is synced to Google Drive.
+
+> Book search and description lookups work out of the box, but share a small public quota that can run out. Add your own free Google Books API key for more reliable lookups.
+
+**Save button:** merges the two existing "Save" buttons into one — label stays "Save" (unchanged text, existing behavior already saved all four fields regardless of which button was clicked).
+
+**Collapsed-state indicator:** none — no badge/dot/count on the collapsed header showing whether a key is set.

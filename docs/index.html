@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=214">
+  <link rel="stylesheet" href="styles.css?v=215">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
@@ -540,6 +540,33 @@
         <h2 class="settings-title">Settings</h2>
 
         <section class="settings-section">
+          <h3 class="settings-section-title">Data</h3>
+          <div class="settings-action-group">
+            <div class="settings-action">
+              <button class="settings-save-btn" onclick="exportLibrary()"><i class="ph-bold ph-export"></i> Export my library</button>
+              <p class="settings-action-desc">Download everything as a JSON file.</p>
+            </div>
+            <div class="settings-action">
+              <input type="file" id="goodreads-file-input" accept=".csv" style="display:none" onchange="handleGoodreadsFile(event)">
+              <button class="settings-btn-outline" onclick="importGoodreads()"><i class="ph-bold ph-download-simple"></i> Import from Goodreads</button>
+              <p class="settings-action-desc">Bring in books from a Goodreads CSV export.</p>
+            </div>
+            <div class="settings-action">
+              <button class="settings-btn-outline" onclick="reSortCategoriesWithAI()"><i class="ph-bold ph-sparkle"></i> Re-sort categories with AI</button>
+              <p class="settings-action-desc">Assign categories to books that don't have one.</p>
+              <p id="settings-resort-progress" class="gr-import-progress hidden"></p>
+            </div>
+            <div class="settings-action hidden" id="fnr-rejected-action">
+              <button class="settings-btn-outline" onclick="toggleFnrRejectedList()" id="fnr-rejected-toggle-btn" aria-expanded="false"><i class="ph-bold ph-eye-slash"></i> Books we've stopped suggesting</button>
+              <p class="settings-action-desc">Books you've rejected. You can undo any of them here.</p>
+              <div id="fnr-rejected-list-wrap" class="fnr-rejected-list-wrap hidden">
+                <div id="fnr-rejected-list" class="fnr-rejected-list"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-section">
           <h3 class="settings-section-title">AI Assistant</h3>
           <p class="settings-section-desc">AI features work out of the box — no setup needed. The fields below are entirely optional. Nothing here is synced to Google Drive.</p>
 
@@ -590,37 +617,6 @@
           </div>
 
           <button class="settings-save-btn" onclick="saveSettings()">Save</button>
-        </section>
-
-        <section class="settings-section">
-          <h3 class="settings-section-title">Data</h3>
-          <div class="settings-action-group">
-            <div class="settings-action">
-              <button class="settings-save-btn" onclick="exportLibrary()"><i class="ph-bold ph-export"></i> Export my library</button>
-              <p class="settings-action-desc">Download everything as a JSON file.</p>
-            </div>
-            <div class="settings-action">
-              <input type="file" id="goodreads-file-input" accept=".csv" style="display:none" onchange="handleGoodreadsFile(event)">
-              <button class="settings-btn-outline" onclick="importGoodreads()"><i class="ph-bold ph-download-simple"></i> Import from Goodreads</button>
-              <p class="settings-action-desc">Bring in books from a Goodreads CSV export.</p>
-            </div>
-            <div class="settings-action">
-              <button class="settings-btn-outline" onclick="cleanupGoodreadsImportCategories()"><i class="ph-bold ph-eraser"></i> Clear categories on original Goodreads import</button>
-              <p class="settings-action-desc">One-off fix for the batch imported before AI categorisation existed.</p>
-            </div>
-            <div class="settings-action">
-              <button class="settings-btn-outline" onclick="reSortCategoriesWithAI()"><i class="ph-bold ph-sparkle"></i> Re-sort categories with AI</button>
-              <p class="settings-action-desc">Assign categories to books that don't have one.</p>
-              <p id="settings-resort-progress" class="gr-import-progress hidden"></p>
-            </div>
-            <div class="settings-action hidden" id="fnr-rejected-action">
-              <button class="settings-btn-outline" onclick="toggleFnrRejectedList()" id="fnr-rejected-toggle-btn" aria-expanded="false"><i class="ph-bold ph-eye-slash"></i> Books we've stopped suggesting</button>
-              <p class="settings-action-desc">Books you've rejected. You can undo any of them here.</p>
-              <div id="fnr-rejected-list-wrap" class="fnr-rejected-list-wrap hidden">
-                <div id="fnr-rejected-list" class="fnr-rejected-list"></div>
-              </div>
-            </div>
-          </div>
         </section>
       </div>
     </div>
@@ -751,8 +747,8 @@
   <script src="purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="merge-libraries.js?v=214"></script>
-  <script src="app.js?v=214"></script>
+  <script src="merge-libraries.js?v=215"></script>
+  <script src="app.js?v=215"></script>
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 

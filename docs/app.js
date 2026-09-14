@@ -1548,35 +1548,6 @@ async function confirmGoodreadsImport() {
   }
 }
 
-// One-off cleanup for the batch of books imported from Goodreads before AI
-// categorisation existed. Matches ONLY on the exact shared `updatedAt` timestamp
-// that batch was written with — nothing else. Refuses to run unless the match
-// count is exactly 62, since that's the known size of the affected batch.
-const GR_LEGACY_IMPORT_TIMESTAMP = '2026-08-21T14:04:36.881Z';
-
-async function cleanupGoodreadsImportCategories() {
-  const matches = books.filter(b => b.updatedAt === GR_LEGACY_IMPORT_TIMESTAMP);
-
-  if (matches.length !== 62) {
-    alert(`Expected exactly 62 books matching the original Goodreads import timestamp, but found ${matches.length}. No changes made.`);
-    return;
-  }
-
-  const ok = confirm(`This will clear the category on ${matches.length} books from the original Goodreads import and mark their source as "goodreads". Continue?`);
-  if (!ok) return;
-
-  for (const b of matches) {
-    b.category  = '';
-    b.source    = 'goodreads';
-    b.updatedAt = new Date().toISOString();
-    await dbPut('books', b);
-  }
-
-  await saveAndSync();
-  refreshCurrentView();
-  alert(`Done — cleared categories on ${matches.length} books.`);
-}
-
 // Runs AI categorisation over any book currently missing a category. Existing
 // categories are never touched — only books whose `category` is empty/falsy
 // are sent to the AI, and _grCategorizeBooks() only ever writes a category
