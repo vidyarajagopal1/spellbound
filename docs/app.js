@@ -616,13 +616,17 @@ function _logDryRunMergeSummary(trigger, stats) {
 // when Drive's modifiedTime has actually moved since this session last
 // observed it here — only then does it fetch the full Drive file and run
 // the real merge, so this does NOT add a full pull to every saveAndSync()
-// call site. In 'dry' mode the merge result is only logged, then discarded;
-// in 'live' mode (Step 4 part one) the ONLY additional thing that happens is
-// exercising the pre-merge safety-net backup once per session — the merge
-// result itself is still only logged and discarded, exactly like dry mode,
-// since the actual live-mode write path doesn't exist yet (a later step).
+// call site. In BOTH 'dry' and 'live' mode, the merge result itself is only
+// logged, then discarded — the actual live-mode write path doesn't exist
+// yet (a later step). Also in BOTH modes (Step 4 part one, widened from
+// live-only so the untested safety net gets real exercise before flipping
+// sync_merge_mode to 'live'): the pre-merge safety-net backup runs once per
+// session. It only reads the current Drive file and writes a timestamped
+// copy elsewhere in appDataFolder — it never touches local data or the live
+// Drive file, so running it in dry mode is exactly as safe as in live mode.
 // The existing push-or-pull path this runs alongside is completely untouched
-// by any of this. 'off' makes this an immediate no-op.
+// by any of this. 'off' makes this an immediate no-op (no merge check AND no
+// backup rehearsal either).
 async function _maybeRunDryMergeCheck(trigger) {
   if (_syncMergeMode === 'off') return;
   if (!gapiReady || !gapi.client.getToken()) return; // nothing to check without a live token
@@ -656,16 +660,15 @@ async function _maybeRunDryMergeCheck(trigger) {
     const local  = await _buildLocalSnapshotForMergeCheck();
     const { stats } = mergeLibrariesWithStats(local, remote);
     _logDryRunMergeSummary(trigger, stats);
-    if (_syncMergeMode === 'live') {
-      // Safety-net rehearsal only (Step 4 part one) — no live-mode write
-      // exists yet to actually gate, but this exercises the backup's own
-      // once-per-session gate/fail-closed behaviour end to end so it's
-      // ready for the write path a later step adds. Nothing downstream
-      // reads this result yet either way.
-      const backupOk = await _ensurePreMergeBackup(fileId);
-      if (!backupOk) {
-        console.warn(`${SYNC_MERGE_LOG_PREFIX} pre-merge backup failed this attempt — a real live-mode write would fall back to push-or-pull here`);
-      }
+    // Safety-net rehearsal (Step 4 part one) — runs in 'dry' mode too, not
+    // just 'live', so the backup's gating/fail-closed behaviour gets real
+    // exercise (and produces a real file you can check with
+    // listDriveBackups()) before sync_merge_mode is ever flipped to 'live'.
+    // No live-mode write exists yet for this to actually gate either way;
+    // this only proves the backup mechanism itself works end to end.
+    const backupOk = await _ensurePreMergeBackup(fileId);
+    if (!backupOk) {
+      console.warn(`${SYNC_MERGE_LOG_PREFIX} pre-merge backup failed this attempt — a real live-mode write would fall back to push-or-pull here`);
     }
     // Result is always discarded here — nothing is written to Drive or
     // IndexedDB by this function, in either 'dry' or 'live' mode, in this step.
