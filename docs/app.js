@@ -46,7 +46,7 @@ let db;
 
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('SpellBoundDB', 4);
+    const req = indexedDB.open('SpellBoundDB', 5);
     req.onupgradeneeded = e => {
       const d = e.target.result;
       if (!d.objectStoreNames.contains('books'))         d.createObjectStore('books',         { keyPath: 'id', autoIncrement: true });
@@ -56,6 +56,13 @@ function openDB() {
       if (!d.objectStoreNames.contains('meta'))          d.createObjectStore('meta',          { keyPath: 'key' });
       if (!d.objectStoreNames.contains('challenges'))    d.createObjectStore('challenges',    { keyPath: 'id', autoIncrement: true });
       if (!d.objectStoreNames.contains('essay_drafts')) d.createObjectStore('essay_drafts',  { keyPath: 'id', autoIncrement: true });
+      // v5: append-only deletion log. Records still leave their store on
+      // delete (no soft-delete, no deletedAt field on records themselves) —
+      // this store is purely a separate tombstone log for future sync use.
+      // No explicit id is passed when writing rows here, so autoIncrement
+      // genuinely fires (unlike the 5 record stores above, which always pass
+      // an explicit id from nextId() and so never use their own autoIncrement).
+      if (!d.objectStoreNames.contains('deletions'))    d.createObjectStore('deletions',    { keyPath: 'id', autoIncrement: true });
     };
     req.onsuccess = e => { db = e.target.result; resolve(db); };
     req.onerror   = e => reject(e.target.error);
@@ -105,6 +112,14 @@ function dbCount(store) {
     req.onsuccess = () => resolve(req.result);
     req.onerror   = () => reject(req.error);
   });
+}
+
+// Appends one row to the 'deletions' tombstone log. Called from every delete
+// handler for books/highlights/essays/wishlist/challenges (including the
+// highlight rows a book-delete cascades into). Does not touch the record's
+// own store in any way — the record is already gone by the time this runs.
+function _recordDeletion(store, recordId) {
+  return dbPut('deletions', { store, recordId, deletedAt: new Date().toISOString() });
 }
 
 // ─── ESSAY DRAFT HELPERS ──────────────────────────────────────────────────────
@@ -189,8 +204,24 @@ function dbSetMeta(key, value) {
   });
 }
 
+// Tracks the last id returned by nextId() this session, so a synchronous
+// loop creating many records in the same millisecond (e.g. the Goodreads
+// importer creating a couple hundred books in one tick) steps forward
+// instead of repeatedly colliding on the same random slot.
+let _lastId = 0;
+
 function nextId(arr) {
-  return arr.length === 0 ? 1 : Math.max(...arr.map(x => x.id)) + 1;
+  // Time-based plus a random component, so two devices editing offline can
+  // never independently produce the same id (the old Math.max(...)+1 scheme
+  // collides as soon as two devices create a record before either has synced
+  // with the other). `arr` is unused now but the signature is kept so every
+  // existing call site stays unchanged. Stays a safe integer for a very long
+  // time: Date.now() (ms) * 1000 + a 0-999 random component is still well
+  // under Number.MAX_SAFE_INTEGER.
+  let id = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  if (id <= _lastId) id = _lastId + 1;
+  _lastId = id;
+  return id;
 }
 
 // ─── LOAD / SAVE LOCAL DATA ───────────────────────────────────────────────────
@@ -200,6 +231,47 @@ async function loadData() {
   essays     = await dbGetAll('essays');
   wishlist   = await dbGetAll('wishlist');
   challenges = await dbGetAll('challenges');
+}
+
+// One-time-per-record backfill: any record written before updatedAt existed
+// (or before a given store started stamping it) gets one filled in now, using
+// an existing date field on that record if there is one, else epoch 0 — so a
+// genuine later edit always wins a future comparison against it. Called once
+// from boot() right after the initial loadData(); harmless to re-run since it
+// skips any record that already has updatedAt.
+async function _backfillMissingUpdatedAt() {
+  const epoch = new Date(0).toISOString();
+  const specs = [
+    { store: 'books',      records: books,      dateField: 'dateCompleted' },
+    { store: 'highlights', records: highlights, dateField: 'savedAt' },
+    { store: 'essays',     records: essays,     dateField: 'date' },
+    { store: 'wishlist',   records: wishlist,   dateField: null },
+    { store: 'challenges', records: challenges, dateField: 'startDate' },
+  ];
+  for (const { store, records, dateField } of specs) {
+    for (const r of records) {
+      if (r.updatedAt) continue;
+      let fallback = epoch;
+      if (dateField && r[dateField]) {
+        const d = new Date(r[dateField]);
+        if (!isNaN(d.getTime())) fallback = d.toISOString();
+      }
+      r.updatedAt = fallback;
+      await dbPut(store, r);
+    }
+  }
+}
+
+// Feature-guarded, best-effort request that the browser not silently evict
+// this origin's storage under pressure. No UI/prompt — just logged.
+async function _requestPersistentStorage() {
+  if (!(navigator.storage && navigator.storage.persist)) return;
+  try {
+    const granted = await navigator.storage.persist();
+    console.log('Persistent storage granted:', granted);
+  } catch (err) {
+    console.error('navigator.storage.persist() failed', err);
+  }
 }
 
 // Authoritative "does this device have any local records?" check, read
@@ -628,13 +700,14 @@ async function syncToDrive() {
     const waitlistOrder = await dbGetMeta('waitlist-order') || [];
     const wishlistOrder = await dbGetMeta('wishlist-order') || [];
     const essay_drafts  = await dbGetAll('essay_drafts');
+    const deletions      = await dbGetAll('deletions');
     // NOTE (later cleanup, not urgent): this payload is built from the
     // in-memory arrays (books/highlights/etc.), which are only kept in sync
     // with IndexedDB by loadData(). Building it from dbGetAll() for each
     // store instead would remove this whole class of in-memory-vs-IndexedDB
     // mismatch (see the cross-check against _localRecordCount in
     // _handleTokenResponse, which exists only because of this gap).
-    const payload   = JSON.stringify({ books, highlights, essays, wishlist, challenges, waitlistOrder, wishlistOrder, essay_drafts });
+    const payload   = JSON.stringify({ books, highlights, essays, wishlist, challenges, waitlistOrder, wishlistOrder, essay_drafts, deletions });
     const newCount  = books.length + highlights.length;
     const fileId    = await _resolveDriveFileId();
     if (fileId) {
@@ -682,7 +755,8 @@ async function exportLibrary() {
   const wishlistOrder = await dbGetMeta('wishlist-order') || [];
   const fnrRejectedForever = await dbGetMeta('fnr_rejected_forever') || [];
   const essay_drafts  = await dbGetAll('essay_drafts');
-  const payload  = JSON.stringify({ books, highlights, essays, wishlist, challenges, waitlistOrder, wishlistOrder, fnrRejectedForever, essay_drafts }, null, 2);
+  const deletions      = await dbGetAll('deletions');
+  const payload  = JSON.stringify({ books, highlights, essays, wishlist, challenges, waitlistOrder, wishlistOrder, fnrRejectedForever, essay_drafts, deletions }, null, 2);
   const date     = new Date().toISOString().slice(0, 10);
   const filename = `spellbound-${date}.json`;
   const blob     = new Blob([payload], { type: 'application/json' });
@@ -1048,11 +1122,12 @@ async function confirmGoodreadsImport() {
 
   for (const w of toWishlist) {
     const item = {
-      id:       nextId(wishlist),
-      title:    w.title,
-      author:   w.author,
-      category: w.category || '',
-      note:     '',
+      id:        nextId(wishlist),
+      title:     w.title,
+      author:    w.author,
+      category:  w.category || '',
+      note:      '',
+      updatedAt: now,
     };
     wishlist.push(item);
     await dbPut('wishlist', item);
@@ -1092,8 +1167,9 @@ async function cleanupGoodreadsImportCategories() {
   if (!ok) return;
 
   for (const b of matches) {
-    b.category = '';
-    b.source   = 'goodreads';
+    b.category  = '';
+    b.source    = 'goodreads';
+    b.updatedAt = new Date().toISOString();
     await dbPut('books', b);
   }
 
@@ -1122,7 +1198,7 @@ async function reSortCategoriesWithAI() {
 
   let updated = 0;
   for (const b of targets) {
-    if (b.category) { await dbPut('books', b); updated++; }
+    if (b.category) { b.updatedAt = new Date().toISOString(); await dbPut('books', b); updated++; }
   }
 
   await saveAndSync();
@@ -1969,8 +2045,12 @@ function handleDeleteBook(id, e) {
 
 async function deleteBookConfirmed(id) {
   await dbDelete('books', id);
+  await _recordDeletion('books', id);
   const toDelete = highlights.filter(h => h.bookId === id);
-  for (const h of toDelete) await dbDelete('highlights', h.id);
+  for (const h of toDelete) {
+    await dbDelete('highlights', h.id);
+    await _recordDeletion('highlights', h.id);
+  }
   await saveAndSync();
   if (currentBookId === id) showView('books');
   else loadBooks();
@@ -2111,17 +2191,18 @@ async function addHighlight(event) {
       bookId = parseInt(document.getElementById('highlight-book-select').value);
     } else {
       const newBook = {
-        id:       nextId(books),
-        title:    document.getElementById('new-book-title').value,
-        status:   document.getElementById('new-book-status').value,
-        category: document.getElementById('new-book-category').value,
+        id:        nextId(books),
+        title:     document.getElementById('new-book-title').value,
+        status:    document.getElementById('new-book-status').value,
+        category:  document.getElementById('new-book-category').value,
+        updatedAt: new Date().toISOString(),
       };
       await dbPut('books', newBook);
       await loadData();
       bookId = newBook.id;
     }
   }
-  const h = { id: nextId(highlights), text, bookId, whyItStayed, date, savedAt: new Date().toISOString() };
+  const h = { id: nextId(highlights), text, bookId, whyItStayed, date, savedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   await dbPut('highlights', h);
   hideForm();
   ['highlight-text-input','why-stayed-input','highlight-date-input','new-book-title'].forEach(id => document.getElementById(id).value = '');
@@ -2153,6 +2234,7 @@ async function updateHighlight(event) {
   h.text        = document.getElementById('edit-highlight-text').value;
   h.whyItStayed = document.getElementById('edit-highlight-why').value;
   h.date        = document.getElementById('edit-highlight-date').value;
+  h.updatedAt   = new Date().toISOString();
   await dbPut('highlights', h);
   hideForm();
   await saveAndSync();
@@ -2163,6 +2245,7 @@ async function updateHighlight(event) {
 
 async function deleteHighlightConfirmed(id) {
   await dbDelete('highlights', id);
+  await _recordDeletion('highlights', id);
   await saveAndSync();
   const view = document.querySelector('.view:not(.hidden)');
   if (view.id === 'highlights-view')      loadHighlights();
@@ -2343,12 +2426,13 @@ function showAddEssayForm() {
 async function addEssay(event) {
   event.preventDefault();
   const essay = {
-    id:       nextId(essays),
-    title:    document.getElementById('essay-title-input').value,
-    subtitle: document.getElementById('essay-subtitle-input').value,
-    date:     document.getElementById('essay-date-input').value,
-    tags:     document.getElementById('essay-tags-input').value,
-    content:  document.getElementById('essay-content-input').value,
+    id:        nextId(essays),
+    title:     document.getElementById('essay-title-input').value,
+    subtitle:  document.getElementById('essay-subtitle-input').value,
+    date:      document.getElementById('essay-date-input').value,
+    tags:      document.getElementById('essay-tags-input').value,
+    content:   document.getElementById('essay-content-input').value,
+    updatedAt: new Date().toISOString(),
   };
   await dbPut('essays', essay);
   hideForm();
@@ -2372,12 +2456,13 @@ function showEditEssayForm() {
 async function updateEssay(event) {
   event.preventDefault();
   const essay = {
-    id:       currentEssayId,
-    title:    document.getElementById('edit-essay-title').value,
-    subtitle: document.getElementById('edit-essay-subtitle').value,
-    date:     document.getElementById('edit-essay-date').value,
-    tags:     document.getElementById('edit-essay-tags').value,
-    content:  document.getElementById('edit-essay-content').value,
+    id:        currentEssayId,
+    title:     document.getElementById('edit-essay-title').value,
+    subtitle:  document.getElementById('edit-essay-subtitle').value,
+    date:      document.getElementById('edit-essay-date').value,
+    tags:      document.getElementById('edit-essay-tags').value,
+    content:   document.getElementById('edit-essay-content').value,
+    updatedAt: new Date().toISOString(),
   };
   await dbPut('essays', essay);
   hideForm();
@@ -2392,6 +2477,7 @@ function handleDeleteEssay(id, e) {
 
 async function deleteEssayConfirmed(id) {
   await dbDelete('essays', id);
+  await _recordDeletion('essays', id);
   await saveAndSync();
   showView('essays');
 }
@@ -2971,6 +3057,7 @@ async function openWishlistDetail(id) {
     if (desc !== undefined) {
       item.descriptionChecked = true;
       if (desc) item.description = desc;
+      item.updatedAt = new Date().toISOString();
       await dbPut('wishlist', item);
     } else {
       item._lookupFailed = true;
@@ -3014,6 +3101,7 @@ async function updateWishlistItem(event) {
   item.category = document.getElementById('edit-wishlist-category').value;
   item.author   = document.getElementById('edit-wishlist-author').value;
   item.note     = document.getElementById('edit-wishlist-note').value;
+  item.updatedAt = new Date().toISOString();
   await dbPut('wishlist', item);
   hideForm();
   await saveAndSync();
@@ -3044,9 +3132,11 @@ async function moveToBooks(wishlistId, status) {
     dateCompleted:      '',
     medium:             '',
     source:             item.source,
+    updatedAt:          new Date().toISOString(),
   };
   await dbPut('books', book);
   await dbDelete('wishlist', wishlistId);
+  await _recordDeletion('wishlist', wishlistId);
   await saveAndSync();
   if (currentWishlistId === wishlistId) showView('wishlist');
   else loadWishlist();
@@ -3055,6 +3145,7 @@ async function moveToBooks(wishlistId, status) {
 async function deleteWishlistItem(id) {
   if (!confirm('Remove from wishlist?')) return;
   await dbDelete('wishlist', id);
+  await _recordDeletion('wishlist', id);
   await saveAndSync();
   if (currentWishlistId === id) showView('wishlist');
   else loadWishlist();
@@ -3071,11 +3162,12 @@ function showAddWishlistForm() {
 async function addWishlistItem(event) {
   event.preventDefault();
   const item = {
-    id:       nextId(wishlist),
-    title:    document.getElementById('wishlist-title-input').value,
-    category: document.getElementById('wishlist-category-input').value,
-    author:   document.getElementById('wishlist-author-input').value,
-    note:     document.getElementById('wishlist-note-input').value,
+    id:        nextId(wishlist),
+    title:     document.getElementById('wishlist-title-input').value,
+    category:  document.getElementById('wishlist-category-input').value,
+    author:    document.getElementById('wishlist-author-input').value,
+    note:      document.getElementById('wishlist-note-input').value,
+    updatedAt: new Date().toISOString(),
   };
   await dbPut('wishlist', item);
   hideForm();
@@ -3199,12 +3291,13 @@ async function finishImport(clippings, newBookStubs) {
   // Materialise stub books with real IDs
   for (const stub of newBookStubs) {
     const book = {
-      id:       nextId([...localBooks, ...createdBooks]),
-      title:    stub.title,
-      author:   stub.author,
-      status:   'Reading',
-      category: stub.category,
-      source:   'kindle',
+      id:        nextId([...localBooks, ...createdBooks]),
+      title:     stub.title,
+      author:    stub.author,
+      status:    'Reading',
+      category:  stub.category,
+      source:    'kindle',
+      updatedAt: new Date().toISOString(),
     };
     createdBooks.push(book);
     localBooks.push(book);
@@ -3221,6 +3314,7 @@ async function finishImport(clippings, newBookStubs) {
       date:        '',
       location:    c.location,
       kindleDate:  c.kindleDate,
+      updatedAt:   new Date().toISOString(),
     });
   }
 
@@ -3363,7 +3457,7 @@ async function saveSprint() {
     endDate = end.toISOString().slice(0, 10);
   }
 
-  const challenge = { id: nextId(challenges), name, target, startDate, endDate };
+  const challenge = { id: nextId(challenges), name, target, startDate, endDate, updatedAt: new Date().toISOString() };
   await dbPut('challenges', challenge);
   hideSprintForm();
   await saveAndSync();
@@ -3373,6 +3467,7 @@ async function saveSprint() {
 async function deleteSprint(id) {
   if (!confirm('Delete this sprint?')) return;
   await dbDelete('challenges', id);
+  await _recordDeletion('challenges', id);
   await saveAndSync();
   loadSprint();
 }
@@ -4501,6 +4596,7 @@ async function fnrAddToWishlist(index) {
     note:        '',
     description: r.description || '',
     whyItFits:   r.why_it_fits || '',
+    updatedAt:   new Date().toISOString(),
   };
   await dbPut('wishlist', item);
   wishlist.push(item);
@@ -5606,17 +5702,18 @@ async function saveBuiltEssay() {
 
   // Reload essays array to get a fresh id
   const allEssays = await dbGetAll('essays');
-  const id = allEssays.length === 0 ? 1 : Math.max(...allEssays.map(e => e.id)) + 1;
+  const id = nextId(allEssays);
 
   const tagStr = (draft.tags || []).join(', ');
   const essay = {
     id,
-    title:    draft.title    || 'Untitled essay',
-    subtitle: draft.subtitle || '',
-    date:     new Date().toISOString().slice(0, 10),
-    tags:     tagStr,
-    content:  draft.finalized_draft,
-    source:   'built'
+    title:     draft.title    || 'Untitled essay',
+    subtitle:  draft.subtitle || '',
+    date:      new Date().toISOString().slice(0, 10),
+    tags:      tagStr,
+    content:   draft.finalized_draft,
+    source:    'built',
+    updatedAt: new Date().toISOString(),
   };
 
   await dbPut('essays', essay);
@@ -6546,7 +6643,7 @@ async function questStage6SaveCapture() {
 }
 
 async function _questSaveHighlight(text, bookId) {
-  const h = { id: nextId(highlights), text, bookId: bookId || null, whyItStayed: '', date: '', savedAt: new Date().toISOString() };
+  const h = { id: nextId(highlights), text, bookId: bookId || null, whyItStayed: '', date: '', savedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   await dbPut('highlights', h);
   await saveAndSync();
   _questState.highlightIds = _questState.highlightIds || [];
@@ -6850,9 +6947,11 @@ function renderQuestPile() {
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 async function boot() {
+  _requestPersistentStorage();
   try {
     await openDB();
     await loadData();
+    await _backfillMissingUpdatedAt();
   } catch (err) {
     // _initialLoadPromise is a hard gate on every sync path (syncToDrive/
     // syncFromDrive/_handleTokenResponse all await it) — it must resolve no
