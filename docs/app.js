@@ -5052,6 +5052,10 @@ async function fnrReplaceResult(index) {
 
   const raw = await callAIWithFeedback(AI_PROMPTS.findNextRead, [], userMsg, null);
   if (!raw) {
+    // Diagnostics only (Batch 6 of the FNR quality fixes) — the UI still
+    // reverts silently on purpose (user confirmed this is fine), but a
+    // repeat of "Replace failed 3x in a row" can now actually be traced.
+    console.warn('[FNR] Replace failed: no response from AI call.', _lastAICallError);
     replaceBtn.disabled = false;
     replaceBtn.innerHTML = '<i class="ph-bold ph-arrows-clockwise"></i> Replace';
     return;
@@ -5074,7 +5078,9 @@ async function fnrReplaceResult(index) {
     _fnrRejectedSlots.delete(index);
     const card = document.getElementById(`fnr-card-${index}`);
     if (card) card.outerHTML = _fnrCardHtml(newRec, index);
-  } catch {
+  } catch (err) {
+    // Diagnostics only (Batch 6) — see the no-raw branch above.
+    console.warn('[FNR] Replace failed: could not parse AI response.', err, raw);
     replaceBtn.disabled = false;
     replaceBtn.innerHTML = '<i class="ph-bold ph-arrows-clockwise"></i> Replace';
   }
