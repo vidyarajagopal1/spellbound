@@ -941,6 +941,11 @@ Settings was opening with three optional, developer-only credential fields (AI a
 ## Find Your Next Read — Stale Rejected-Slot Fix (v217)
 - Fixed a bug where resubmitting the form via "Edit Preferences" (without leaving the results screen entirely) could show a brand-new result card as already-rejected, with no reject action taken on it. The dimmed/Undo visual state was tracked by result-card position rather than by book identity, and that position tracking was only ever cleared on a fresh open of Find Your Next Read, not on an in-place resubmit — whatever book happened to land in a previously-rejected slot inherited the stale mark. The reject list that actually excludes books from recommendations was unaffected; this was a cosmetic display bug only
 
+## Book Search Quality + Quest Search Dead-End Fix (v218)
+- Fixed two Google Books search bugs shared by every search surface (Add Book, Wishlist, Edit Book, Quest, Find Your Next Read), found via a Quest bug report ("The Book Thief"/"City of Djinns" not found, lowercase typing never matching): (1) quoted `intitle:"..."` queries are case-sensitive against how titles are actually indexed (capitalized), so a lowercase-typed query never matched — now the text is Title-Cased before quoting; (2) the incremental search always dropped the last (possibly still-typing) word before querying, which buried a fully-typed, correct, popular title under a generic truncated prefix's noise (e.g. "City of Djinns" truncated to "City of", swamped by the Cassandra Clare series) — now the full typed phrase is tried first, with the truncated query only as a fallback if the full phrase returns nothing
+- Quest's three separate search-and-add implementations (Stage 1, Stages 3–5, Stage 7's "Add a few more") were consolidated into one shared component (`QUEST_SEARCH_SITES` config + shared render/select functions), which also got two features ported from the manual Add Book form: 10 fetched results with "None of these — show more" pagination (was a flat 8, no pagination), and a "Keep typing for a more precise match." hint for weak/ambiguous single-word matches
+- Added the actual fix for the reported dead end: when Quest search fails, returns nothing, or every fetched result has been dismissed, a "Can't find it? Add it manually" link now reveals an inline Title + Author form (both required) that creates the book directly — previously there was no way to add a book to a Quest pile if Google Books didn't return it
+
 ---
 
 | Version | Changes |
@@ -973,5 +978,6 @@ Settings was opening with three optional, developer-only credential fields (AI a
 | v215 | Settings: Data section moved to the top; removed a one-off Goodreads category-cleanup tool that could only ever run once |
 | v216 | Settings: collapsed AI Assistant/Book Lookup credential fields into one "Keys and codes" section; merged their two Save buttons into one |
 | v217 | Fixed Find Your Next Read showing the wrong result card as already-rejected after an in-place resubmit (stale slot-position state) |
+| v218 | Fixed case-sensitive/truncation-first search bugs shared by every book search surface; consolidated Quest's 3 search implementations into one shared core with pagination + weak-match hint; added a manual Title/Author entry fallback so Quest search is never a dead end |
 
 

@@ -3014,6 +3014,17 @@ function normalizeBookQuery(s) {
     .trim();
 }
 
+// Google's quoted intitle:"..."/inauthor:"..." phrase match is case-
+// sensitive against how titles/authors are actually indexed (capitalized) —
+// a lowercase-typed query (e.g. intitle:"the book thief") matches nothing
+// even though the book exists, confirmed live. Title-casing the text before
+// quoting fixes this regardless of how the reader actually typed it. Only
+// used for QUOTED queries — unquoted token queries are tokenized/matched
+// case-insensitively already, so they're left untouched.
+function _toTitleCaseForQuery(s) {
+  return (s || '').replace(/\S+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
 // Titles/subtitles matching this are companion material (study guides,
 // summaries, discussion guides, etc.) rather than the actual book itself —
 // dropped from all search results everywhere, never the real work.
@@ -3108,8 +3119,8 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, author =
   if (!navigator.onLine) return null;
   const cleaned = normalizeBookQuery(query);
   const cleanedAuthor = author ? normalizeBookQuery(author) : '';
-  let q = field ? `${field}:"${cleaned}"` : query;
-  if (field && cleanedAuthor) q += ` inauthor:"${cleanedAuthor}"`;
+  let q = field ? `${field}:"${_toTitleCaseForQuery(cleaned)}"` : query;
+  if (field && cleanedAuthor) q += ` inauthor:"${_toTitleCaseForQuery(cleanedAuthor)}"`;
   const runQuery = async (q) => {
     const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&printType=books&langRestrict=en&maxResults=${maxResults}${await gbApiKeyParam()}`;
     const controller = new AbortController();
@@ -3132,7 +3143,7 @@ async function googleBooksSearch(query, { maxResults = 5, field = null, author =
     results = await runQuery(unquoted);
   }
   if (field && cleanedAuthor && results !== null && results.length === 0) {
-    results = await runQuery(`${field}:"${cleaned}"`);
+    results = await runQuery(`${field}:"${_toTitleCaseForQuery(cleaned)}"`);
     if (results !== null && results.length === 0) {
       results = await runQuery(`${field}:${cleaned}`);
     }
@@ -3254,33 +3265,37 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
   const q = cleaned.toLowerCase();
   const words = cleaned.split(' ');
   const isSingleWord = words.length === 1;
-  let sendWords = cleaned;
+  // Once a search actually fires (the debounce settled), the FULL typed
+  // phrase is tried FIRST — a complete, correctly-typed, popular title
+  // (e.g. "The Book Thief") must never be at the mercy of a generic
+  // truncated-prefix query's noise (e.g. "The Book" surfacing hundreds of
+  // unrelated "The Book of ..." titles first — a real reported failure).
+  // The old default — always dropping the last word, in case it's still
+  // mid-typing — is now only a FALLBACK, tried if the full phrase turns up
+  // nothing, so a finished query is never undermined by that tolerance.
+  let truncated = null;
   if (words.length > 1) {
     const leading = words.slice(0, -1).join(' ');
-    // Only actually drop the last word if what's left still has something
-    // non-stopword to search on. Otherwise a completely real two-word title
-    // starting with a stopword (e.g. "The Correspondent", "The Alchemist")
-    // would get truncated down to just "The" — which the check right below
-    // correctly treats as meaningless and bails out on — silently discarding
-    // the one word that actually identifies the book. Falling back to the
-    // full, untruncated query here still lets that same check work exactly
-    // as intended for the genuinely-empty case (e.g. the user has only
-    // typed "The " so far).
+    // Only actually offer the truncated fallback if what's left still has
+    // something non-stopword to search on. Otherwise a completely real
+    // two-word title starting with a stopword (e.g. "The Correspondent",
+    // "The Alchemist") would fall back to just "The" — meaningless on its
+    // own, so there'd be nothing useful to fall back to.
     if (leading.length >= 3 && !leading.split(' ').every(w => GB_STOPWORDS.has(w.toLowerCase()))) {
-      sendWords = leading;
+      truncated = leading;
     }
   }
-  // If every word we'd send is a common stopword, the API would just return
-  // thirty arbitrary books that the local filter discards anyway — skip the
-  // round trip entirely.
-  if (sendWords.split(' ').every(w => GB_STOPWORDS.has(w.toLowerCase()))) {
+  // If the full phrase is nothing but common stopwords, the API would just
+  // return thirty arbitrary books that the local filter discards anyway —
+  // skip the round trip entirely.
+  if (words.every(w => GB_STOPWORDS.has(w.toLowerCase()))) {
     const empty = [];
     if (isSingleWord) empty._incomplete = true;
     return empty;
   }
   let items;
   let olMap;
-  if (_gbIncrementalCache.key === sendWords) {
+  if (_gbIncrementalCache.key === cleaned) {
     items = _gbIncrementalCache.items;
     olMap = _gbIncrementalCache.olMap;
   } else {
@@ -3302,9 +3317,19 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
     };
     // Fired in parallel with the Google request(s) below (not awaited until
     // after), so it adds no extra sequential latency in the common case.
-    const olPromise = isSingleWord ? _openLibraryEditionCounts(sendWords) : Promise.resolve(null);
-    items = await fetchOnce(`intitle:"${sendWords}"`);
+    const olPromise = isSingleWord ? _openLibraryEditionCounts(cleaned) : Promise.resolve(null);
+    items = await fetchOnce(`intitle:"${_toTitleCaseForQuery(cleaned)}"`);
     if (items === null) return null;
+    // If nothing in that full-phrase result set actually contains the full
+    // phrase (same check the final local filter below applies), fall back
+    // to the truncated, leading-words-only query — preserved specifically
+    // for the case where the final word genuinely IS still incomplete (so
+    // the full phrase could never have matched anything to begin with).
+    const matchesFull = items.some(r => normalizeBookQuery(r.fullTitle).toLowerCase().includes(q));
+    if (!matchesFull && truncated) {
+      const fallbackItems = await fetchOnce(`intitle:"${_toTitleCaseForQuery(truncated)}"`);
+      if (fallbackItems !== null) items = items.concat(fallbackItems);
+    }
     // A still-being-typed single word may be incomplete, and Google's
     // intitle: operator's own matching behavior for a partial/incomplete
     // token is unpredictable (sometimes substring-matches, sometimes
@@ -3318,12 +3343,12 @@ async function googleBooksIncrementalSearch(query, { maxResults = 8, timeout = 4
     // all, and the tier() ranking below (which is fragment-continuation
     // aware for single-word queries) sorts the merged set correctly
     // regardless of which query actually surfaced the right book.
-    if (isSingleWord && sendWords.length >= 4) {
-      const broader = await fetchOnce(sendWords);
+    if (isSingleWord && cleaned.length >= 4) {
+      const broader = await fetchOnce(cleaned);
       if (broader !== null) items = items.concat(broader);
     }
     olMap = await olPromise;
-    _gbIncrementalCache = { key: sendWords, items, olMap };
+    _gbIncrementalCache = { key: cleaned, items, olMap };
   }
   let results = items.filter(r => normalizeBookQuery(r.fullTitle).toLowerCase().includes(q));
   if (author) {
@@ -6571,14 +6596,6 @@ function _questSpineOptionHtml(b, i, total, isSelected, onClickAttr) {
     </div>`;
 }
 
-function _questSearchBlockHtml() {
-  return `
-    <div class="quest-search">
-      <input type="search" class="quest-search-input" id="quest-search-input-1" placeholder="Search for books" oninput="questStage1SearchInput(this.value)" autocomplete="off">
-      <div class="quest-search-results" id="quest-search-results-1"></div>
-    </div>`;
-}
-
 function _renderQuestStage1(body) {
   const isImporter = _questImporterCandidates().length > 0;
   const { gridBooks, chosen } = _questStage1GridBooks();
@@ -6591,10 +6608,10 @@ function _renderQuestStage1(body) {
       </div>
       <div class="quest-group">
         <p class="quest-note-sub">Not here? Search for it.</p>
-        ${_questSearchBlockHtml()}
+        ${_questSearchWidgetHtml(1)}
       </div>` : `
       <div class="quest-group">
-        ${_questSearchBlockHtml()}
+        ${_questSearchWidgetHtml(1)}
       </div>`;
 
   body.innerHTML = `
@@ -6629,18 +6646,20 @@ async function questStage1SelectImported(bookId) {
   questGoToStage(2);
 }
 
-async function _questCreateBookFromSearchResult(item, status) {
-  // Unlike the manual Add Book form, none of Quest's search-add flows (or
-  // Find Your Next Read's "Add a few more") ever confirm with the reader —
-  // they add instantly on tap. So this check is silent and non-interrupting:
-  // if the title's already in the library, just reuse that book instead of
-  // creating a second row for it.
-  const existing = _findExistingBookByTitle(item.title || '');
+// Shared tail for creating a brand-new quest book, used by both the
+// search-add path (_questCreateBookFromSearchResult) and the manual-entry
+// fallback (_questCreateManualBook). Unlike the manual Add Book form, none
+// of Quest's add flows ever confirm with the reader — they add instantly.
+// So the duplicate check here is silent and non-interrupting: if the title
+// is already in the library, just reuse that book instead of creating a
+// second row for it.
+async function _questFinalizeNewBook(title, author, status) {
+  const existing = _findExistingBookByTitle(title || '');
   if (existing) return existing;
   const book = {
     id:            nextId(books),
-    title:         item.title || '',
-    author:        (item.author_name || []).join(', '),
+    title:         title || '',
+    author:        author || '',
     status:        status,
     // Left blank on purpose: categorised in the background by AI (same as
     // Goodreads import), not the local heading-guess used elsewhere in the
@@ -6660,6 +6679,10 @@ async function _questCreateBookFromSearchResult(item, status) {
   return book;
 }
 
+async function _questCreateBookFromSearchResult(item, status) {
+  return _questFinalizeNewBook(item.title || '', (item.author_name || []).join(', '), status);
+}
+
 // Categorises a single newly-added quest book using the same AI
 // categorisation as Goodreads import (_grCategorizeBooks). Deliberately not
 // awaited by callers: the spine renders immediately in the default colour
@@ -6675,53 +6698,6 @@ async function _questCategorizeInBackground(book) {
     renderQuestPile();  // recolour the shelf now that the category resolved
   } catch (err) {
     console.error('_questCategorizeInBackground failed', err);
-  }
-}
-
-function questStage1SearchInput(value) {
-  clearTimeout(_questSearchTimer);
-  const resultsEl = document.getElementById('quest-search-results-1');
-  if (!resultsEl) return;
-  const q = value.trim();
-  if (q.length < 4) { resultsEl.innerHTML = ''; resultsEl.classList.remove('search-loading'); delete resultsEl.dataset.query; return; }
-  if (resultsEl.querySelector('.quest-search-result')) {
-    resultsEl.classList.add('search-loading');
-  } else {
-    resultsEl.classList.remove('search-loading');
-    resultsEl.innerHTML = '<p class="quest-search-loading">Searching…</p>';
-  }
-  _questSearchTimer = setTimeout(async () => {
-    resultsEl.dataset.query = q;
-    const items = await googleBooksIncrementalSearch(q, { maxResults: 8 });
-    if (resultsEl.dataset.query !== q) return; // a newer keystroke already superseded this request
-    resultsEl.classList.remove('search-loading');
-    if (!items)          { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
-    if (items.length === 0) { resultsEl.innerHTML = items._incomplete ? '<p class="quest-search-loading">Keep typing.</p>' : '<p class="quest-search-loading">No results found.</p>'; return; }
-    resultsEl._items = items;
-    resultsEl.innerHTML = items.map((item, i) => `
-      <div class="quest-search-result" onclick="questStage1SearchSelect(${i})">
-        ${item.thumb ? `<img class="quest-search-result-thumb" src="${item.thumb}" alt="">` : '<div class="quest-search-result-thumb quest-search-result-thumb-placeholder"></div>'}
-        <div class="quest-search-result-info">
-          <div class="quest-search-result-title">${escapeHtml(item.fullTitle || item.title)}</div>
-          ${item.author_name?.length ? `<div class="quest-search-result-author">${escapeHtml(item.author_name.join(', '))}</div>` : ''}
-        </div>
-      </div>`).join('');
-  }, 500);
-}
-
-async function questStage1SearchSelect(index) {
-  const resultsEl = document.getElementById('quest-search-results-1');
-  const item = resultsEl?._items?.[index];
-  if (!item) return;
-  delete resultsEl.dataset.query;
-  try {
-    const book = await _questCreateBookFromSearchResult(item, 'Completed');
-    _questState.pileIds = [book.id];
-    await _saveQuestState();
-    questGoToStage(2);
-  } catch (err) {
-    console.error('questStage1SearchSelect failed', err);
-    resultsEl.innerHTML = '<p class="quest-search-loading">Something went wrong adding that book. Check the console for details.</p>';
   }
 }
 
@@ -6813,22 +6789,70 @@ async function questStage3ToggleLibraryBook(bookId) {
   }
 }
 
-function _questMultiSearchBlockHtml(stageNum) {
+// ── Shared search-and-add component (Stage 1, Stages 3–5, Stage 7) ────────
+// One implementation used by every Quest search box, keyed by the same
+// numeric "site id" already used in each box's DOM id suffix (e.g.
+// quest-search-input-3). Each site supplies `statusForNew` (status to give
+// a newly-created book) and `onAdd(book)` (what happens after a book is
+// created/reused, via search-select OR the manual-entry fallback below —
+// both paths call the same onAdd, so behavior never diverges between them).
+const QUEST_SEARCH_SITES = {
+  1: {
+    statusForNew: 'Completed',
+    // Stage 1 takes exactly one book — picking one (by search or manual
+    // entry) replaces the pile and advances straight to Stage 2.
+    onAdd: async (book) => {
+      _questState.pileIds = [book.id];
+      await _saveQuestState();
+      questGoToStage(2);
+    },
+  },
+  3: { statusForNew: QUEST_MULTI_STAGE_CONFIG[3].statusForNew, onAdd: (book) => _questMultiStageOnAdd(3, book) },
+  4: { statusForNew: QUEST_MULTI_STAGE_CONFIG[4].statusForNew, onAdd: (book) => _questMultiStageOnAdd(4, book) },
+  5: { statusForNew: QUEST_MULTI_STAGE_CONFIG[5].statusForNew, onAdd: (book) => _questMultiStageOnAdd(5, book) },
+  7: { statusForNew: 'Completed', onAdd: (book) => _questFNROnAdd(book) },
+};
+
+async function _questMultiStageOnAdd(stageNum, book) {
+  const cfg = QUEST_MULTI_STAGE_CONFIG[stageNum];
+  if (!_questState[cfg.trackKey].includes(book.id)) _questState[cfg.trackKey].push(book.id);
+  await questAddBookToPile(book.id);
+  _questUpdateMultiStageUI(stageNum);
+}
+
+async function _questFNROnAdd(book) {
+  await questAddBookToPile(book.id);
+  // Live count update in place — the search field stays open (per spec)
+  // rather than the screen re-rendering from scratch.
+  const count = _questFNRPileBooks().length;
+  const subcopyEl = document.getElementById('quest-fnr-subcopy');
+  if (subcopyEl) {
+    subcopyEl.textContent = count >= 5
+      ? "Now for the part we promised. Let's find you something worth reading next."
+      : `Find Your Next Read works best with five to eight books in your pile. You've got ${_questSpellNumber(count)}.`;
+  }
+  const actionsEl = document.getElementById('quest-fnr-gate-actions');
+  if (actionsEl && count >= 5) {
+    actionsEl.innerHTML = `<button class="build-next-btn" onclick="questShowFNRIntermission()">Continue</button>`;
+  }
+}
+
+function _questSearchWidgetHtml(siteId) {
   return `
     <div class="quest-search">
-      <input type="search" class="quest-search-input" id="quest-search-input-${stageNum}" placeholder="Search for books" oninput="questMultiSearchInput(this.value, ${stageNum})" autocomplete="off">
-      <div class="quest-search-results" id="quest-search-results-${stageNum}"></div>
+      <input type="search" class="quest-search-input" id="quest-search-input-${siteId}" placeholder="Search for books" oninput="questSearchInput(${siteId}, this.value)" autocomplete="off">
+      <div class="quest-search-results" id="quest-search-results-${siteId}"></div>
     </div>`;
 }
 
-// Shared by Stages 3, 4 and 5. For Stage 3 this also live-filters the
+// Shared by every search box above. For Stage 3 this also live-filters the
 // importer grid (local, instant) in addition to the debounced external
-// Google Books lookup that every stage here uses to add genuinely new books.
-function questMultiSearchInput(value, stageNum) {
-  if (stageNum === 3) _questRenderStage3Grid(value);
+// Google Books lookup every site here uses to add genuinely new books.
+function questSearchInput(siteId, value) {
+  if (siteId === 3) _questRenderStage3Grid(value);
 
   clearTimeout(_questSearchTimer);
-  const resultsEl = document.getElementById(`quest-search-results-${stageNum}`);
+  const resultsEl = document.getElementById(`quest-search-results-${siteId}`);
   if (!resultsEl) return;
   const q = value.trim();
   if (q.length < 4) { resultsEl.innerHTML = ''; resultsEl.classList.remove('search-loading'); delete resultsEl.dataset.query; return; }
@@ -6840,40 +6864,124 @@ function questMultiSearchInput(value, stageNum) {
   }
   _questSearchTimer = setTimeout(async () => {
     resultsEl.dataset.query = q;
-    const items = await googleBooksIncrementalSearch(q, { maxResults: 8 });
+    const items = await googleBooksIncrementalSearch(q, { maxResults: 10 });
     if (resultsEl.dataset.query !== q) return; // a newer keystroke already superseded this request
     resultsEl.classList.remove('search-loading');
-    if (!items)              { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
-    if (items.length === 0) { resultsEl.innerHTML = items._incomplete ? '<p class="quest-search-loading">Keep typing.</p>' : '<p class="quest-search-loading">No results found.</p>'; return; }
-    resultsEl._items = items;
-    resultsEl.innerHTML = items.map((item, i) => `
-      <div class="quest-search-result" onclick="questMultiSearchSelect(${stageNum}, ${i})">
+    _questRenderSearchResults(siteId, items);
+  }, 500);
+}
+
+function _questRenderSearchResults(siteId, items) {
+  const resultsEl = document.getElementById(`quest-search-results-${siteId}`);
+  if (!resultsEl) return;
+  if (!items) { resultsEl.innerHTML = _questSearchDeadEndHtml(siteId, 'Search failed.'); return; }
+  if (items.length === 0) {
+    resultsEl.innerHTML = items._incomplete
+      ? '<p class="quest-search-loading">Keep typing.</p>'
+      : _questSearchDeadEndHtml(siteId, 'No results found.');
+    return;
+  }
+  resultsEl._allItems   = items;
+  resultsEl._shownCount = 0;
+  resultsEl._weakMatch  = !!items._weakMatch;
+  _questShowMoreResults(siteId);
+}
+
+// Renders the next unshown batch of already-fetched results (5 at a time —
+// up to 10 are fetched, mirroring Add Book's suggestion pagination). Once
+// every fetched item has been shown and dismissed, that's functionally the
+// same dead end as "No results found.", so it offers the same manual-entry
+// fallback rather than just going blank.
+function _questShowMoreResults(siteId) {
+  const resultsEl = document.getElementById(`quest-search-results-${siteId}`);
+  if (!resultsEl || !resultsEl._allItems) return;
+  const start = resultsEl._shownCount || 0;
+  const batch = resultsEl._allItems.slice(start, start + 5);
+  if (batch.length === 0) { resultsEl.innerHTML = _questSearchDeadEndHtml(siteId, 'None of those.'); return; }
+  resultsEl._shownCount = start + batch.length;
+  // Google's search has no wildcard/prefix operator, so a still-incomplete
+  // single word can only ever be matched against exact/coincidental hits —
+  // shown, but flagged so finishing the word reads as likely to help.
+  const nudge = resultsEl._weakMatch ? `<p class="quest-search-loading">Keep typing for a more precise match.</p>` : '';
+  const cards = batch.map((item, i) => `
+      <div class="quest-search-result" onclick="questSearchSelect(${siteId}, ${start + i})">
         ${item.thumb ? `<img class="quest-search-result-thumb" src="${item.thumb}" alt="">` : '<div class="quest-search-result-thumb quest-search-result-thumb-placeholder"></div>'}
         <div class="quest-search-result-info">
           <div class="quest-search-result-title">${escapeHtml(item.fullTitle || item.title)}</div>
           ${item.author_name?.length ? `<div class="quest-search-result-author">${escapeHtml(item.author_name.join(', '))}</div>` : ''}
         </div>
       </div>`).join('');
-  }, 500);
+  const hasMore = resultsEl._shownCount < resultsEl._allItems.length;
+  const moreBtnLabel = hasMore ? 'None of these — show more' : 'None of these';
+  resultsEl.innerHTML = `${nudge}${cards}<button type="button" class="quest-show-more-btn" onclick="_questShowMoreResults(${siteId})">${moreBtnLabel}</button>`;
 }
 
-async function questMultiSearchSelect(stageNum, index) {
-  const resultsEl = document.getElementById(`quest-search-results-${stageNum}`);
-  const item = resultsEl?._items?.[index];
+async function questSearchSelect(siteId, index) {
+  const resultsEl = document.getElementById(`quest-search-results-${siteId}`);
+  const item = resultsEl?._allItems?.[index];
   if (!item) return;
   delete resultsEl.dataset.query;
-  const cfg = QUEST_MULTI_STAGE_CONFIG[stageNum];
+  const site = QUEST_SEARCH_SITES[siteId];
   try {
-    const book = await _questCreateBookFromSearchResult(item, cfg.statusForNew);
-    if (!_questState[cfg.trackKey].includes(book.id)) _questState[cfg.trackKey].push(book.id);
-    await questAddBookToPile(book.id);
+    const book = await _questCreateBookFromSearchResult(item, site.statusForNew);
     resultsEl.innerHTML = '';
-    const input = document.getElementById(`quest-search-input-${stageNum}`);
+    const input = document.getElementById(`quest-search-input-${siteId}`);
     if (input) { input.value = ''; input.focus(); }
-    _questUpdateMultiStageUI(stageNum);
+    await site.onAdd(book);
   } catch (err) {
-    console.error('questMultiSearchSelect failed', err);
+    console.error('questSearchSelect failed', err);
     resultsEl.innerHTML = '<p class="quest-search-loading">Something went wrong adding that book. Check the console for details.</p>';
+  }
+}
+
+// The "no result found, and no way to fix it" dead end — shown whenever
+// search fails or comes up empty. Offers a Title + Author manual-entry
+// fallback (both required, matching the manual Add Book form) so a book
+// missing/mismatched in Google Books' index is never unaddable.
+function _questSearchDeadEndHtml(siteId, message) {
+  return `<p class="quest-search-loading">${message}</p>
+    <button type="button" class="quest-manual-add-trigger" onclick="questShowManualAdd(${siteId})">Can't find it? Add it manually</button>
+    ${_questManualAddFormHtml(siteId)}`;
+}
+
+function _questManualAddFormHtml(siteId) {
+  return `
+    <div class="quest-manual-add hidden" id="quest-manual-add-${siteId}">
+      <input type="text" class="quest-search-input" id="quest-manual-title-${siteId}" placeholder="Title" autocomplete="off">
+      <input type="text" class="quest-search-input" id="quest-manual-author-${siteId}" placeholder="Author" autocomplete="off">
+      <button type="button" class="build-next-btn" onclick="questManualAddSubmit(${siteId})">Add</button>
+      <p class="quest-manual-add-error hidden" id="quest-manual-add-error-${siteId}"></p>
+    </div>`;
+}
+
+function questShowManualAdd(siteId) {
+  document.getElementById(`quest-manual-add-${siteId}`)?.classList.remove('hidden');
+  document.getElementById(`quest-manual-title-${siteId}`)?.focus();
+  document.querySelector(`#quest-search-results-${siteId} .quest-manual-add-trigger`)?.classList.add('hidden');
+}
+
+async function questManualAddSubmit(siteId) {
+  const titleEl  = document.getElementById(`quest-manual-title-${siteId}`);
+  const authorEl = document.getElementById(`quest-manual-author-${siteId}`);
+  const errorEl  = document.getElementById(`quest-manual-add-error-${siteId}`);
+  const title    = titleEl?.value.trim() || '';
+  const author   = authorEl?.value.trim() || '';
+  if (!title || !author) {
+    if (errorEl) { errorEl.textContent = 'Please enter both a title and an author.'; errorEl.classList.remove('hidden'); }
+    return;
+  }
+  if (errorEl) errorEl.classList.add('hidden');
+  const site = QUEST_SEARCH_SITES[siteId];
+  try {
+    const book = await _questFinalizeNewBook(title, author, site.statusForNew);
+    const resultsEl = document.getElementById(`quest-search-results-${siteId}`);
+    if (resultsEl) resultsEl.innerHTML = '';
+    const inputEl = document.getElementById(`quest-search-input-${siteId}`);
+    if (inputEl) inputEl.value = '';
+    await site.onAdd(book);
+  } catch (err) {
+    console.error('questManualAddSubmit failed', err);
+    if (errorEl) { errorEl.textContent = 'Something went wrong adding that book. Check the console for details.'; errorEl.classList.remove('hidden'); }
   }
 }
 
@@ -6905,10 +7013,10 @@ function _renderQuestStage3(body) {
       </div>
       <div class="quest-group">
         <p class="quest-note-sub">Not here? Search for it.</p>
-        ${_questMultiSearchBlockHtml(3)}
+        ${_questSearchWidgetHtml(3)}
       </div>` : `
       <div class="quest-group">
-        ${_questMultiSearchBlockHtml(3)}
+        ${_questSearchWidgetHtml(3)}
       </div>`;
 
   body.innerHTML = `
@@ -6935,7 +7043,7 @@ function _renderQuestStage4(body) {
         <p class="build-prompt-small">Physical, audio, or e-book. Whatever you're reading gets its own Spotlight on your Home page.</p>
       </div>
       <div class="quest-group">
-        ${_questMultiSearchBlockHtml(4)}
+        ${_questSearchWidgetHtml(4)}
       </div>
       <div class="build-nav">
         <button class="build-skip-btn" onclick="questGoToStage(3)">&larr; Back</button>
@@ -6954,7 +7062,7 @@ function _renderQuestStage5(body) {
         <p class="build-prompt-small">So you always have a glimpse of your TBR, waiting for you at Home.</p>
       </div>
       <div class="quest-group">
-        ${_questMultiSearchBlockHtml(5)}
+        ${_questSearchWidgetHtml(5)}
       </div>
       <div class="build-nav">
         <button class="build-skip-btn" onclick="questGoToStage(4)">&larr; Back</button>
@@ -7233,7 +7341,7 @@ function _renderQuestStage7(body) {
           : `Find Your Next Read works best with five to eight books in your pile. You've got ${_questSpellNumber(count)}.`}</p>
       </div>
       <div class="quest-group" id="quest-fnr-add-more" style="display:none">
-        ${_questFNRSearchBlockHtml()}
+        ${_questSearchWidgetHtml(7)}
       </div>
       <div class="build-nav" id="quest-fnr-gate-actions">
         ${fiveOrMore
@@ -7251,76 +7359,6 @@ function questFNRShowAddMore() {
   const group = document.getElementById('quest-fnr-add-more');
   if (group) group.style.display = 'flex';
   document.getElementById('quest-search-input-7')?.focus();
-}
-
-function _questFNRSearchBlockHtml() {
-  return `
-    <div class="quest-search">
-      <input type="search" class="quest-search-input" id="quest-search-input-7" placeholder="Search for books" oninput="questFNRSearchInput(this.value)" autocomplete="off">
-      <div class="quest-search-results" id="quest-search-results-7"></div>
-    </div>`;
-}
-
-function questFNRSearchInput(value) {
-  clearTimeout(_questSearchTimer);
-  const resultsEl = document.getElementById('quest-search-results-7');
-  if (!resultsEl) return;
-  const q = value.trim();
-  if (q.length < 4) { resultsEl.innerHTML = ''; resultsEl.classList.remove('search-loading'); delete resultsEl.dataset.query; return; }
-  if (resultsEl.querySelector('.quest-search-result')) {
-    resultsEl.classList.add('search-loading');
-  } else {
-    resultsEl.classList.remove('search-loading');
-    resultsEl.innerHTML = '<p class="quest-search-loading">Searching…</p>';
-  }
-  _questSearchTimer = setTimeout(async () => {
-    resultsEl.dataset.query = q;
-    const items = await googleBooksIncrementalSearch(q, { maxResults: 8 });
-    if (resultsEl.dataset.query !== q) return; // a newer keystroke already superseded this request
-    resultsEl.classList.remove('search-loading');
-    if (!items)              { resultsEl.innerHTML = '<p class="quest-search-loading">Search failed.</p>'; return; }
-    if (items.length === 0) { resultsEl.innerHTML = items._incomplete ? '<p class="quest-search-loading">Keep typing.</p>' : '<p class="quest-search-loading">No results found.</p>'; return; }
-    resultsEl._items = items;
-    resultsEl.innerHTML = items.map((item, i) => `
-      <div class="quest-search-result" onclick="questFNRSearchSelect(${i})">
-        ${item.thumb ? `<img class="quest-search-result-thumb" src="${item.thumb}" alt="">` : '<div class="quest-search-result-thumb quest-search-result-thumb-placeholder"></div>'}
-        <div class="quest-search-result-info">
-          <div class="quest-search-result-title">${escapeHtml(item.fullTitle || item.title)}</div>
-          ${item.author_name?.length ? `<div class="quest-search-result-author">${escapeHtml(item.author_name.join(', '))}</div>` : ''}
-        </div>
-      </div>`).join('');
-  }, 500);
-}
-
-async function questFNRSearchSelect(index) {
-  const resultsEl = document.getElementById('quest-search-results-7');
-  const item = resultsEl?._items?.[index];
-  if (!item) return;
-  delete resultsEl.dataset.query;
-  try {
-    const book = await _questCreateBookFromSearchResult(item, 'Completed');
-    await questAddBookToPile(book.id);
-    resultsEl.innerHTML = '';
-    const input = document.getElementById('quest-search-input-7');
-    if (input) { input.value = ''; input.focus(); }
-
-    // Live count update in place — the search field stays open (per spec)
-    // rather than the screen re-rendering from scratch.
-    const count = _questFNRPileBooks().length;
-    const subcopyEl = document.getElementById('quest-fnr-subcopy');
-    if (subcopyEl) {
-      subcopyEl.textContent = count >= 5
-        ? "Now for the part we promised. Let's find you something worth reading next."
-        : `Find Your Next Read works best with five to eight books in your pile. You've got ${_questSpellNumber(count)}.`;
-    }
-    const actionsEl = document.getElementById('quest-fnr-gate-actions');
-    if (actionsEl && count >= 5) {
-      actionsEl.innerHTML = `<button class="build-next-btn" onclick="questShowFNRIntermission()">Continue</button>`;
-    }
-  } catch (err) {
-    console.error('questFNRSearchSelect failed', err);
-    resultsEl.innerHTML = '<p class="quest-search-loading">Something went wrong adding that book. Check the console for details.</p>';
-  }
 }
 
 // Hands off from the quest overlay to the existing Find Your Next Read

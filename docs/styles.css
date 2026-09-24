@@ -1200,6 +1200,27 @@ main { min-height: 100%; }
   color: #5a4c3a;
   padding: 6px 0;
 }
+.quest-manual-add-trigger,
+.quest-show-more-btn {
+  background: none;
+  border: none;
+  color: #5a4c3a;
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 4px 0;
+  text-align: left;
+  text-decoration: underline;
+}
+.quest-manual-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.quest-manual-add-error {
+  font-size: 0.78rem;
+  color: #f87171;
+}
 .quest-rating-options {
   display: flex;
   flex-direction: column;
