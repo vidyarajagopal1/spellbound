@@ -4408,6 +4408,7 @@ const FNR_GENRES = [
 let _fnrFormState  = null;  // saved when navigating to results; cleared on fresh open
 let _fnrResults    = [];    // current 5 results on screen
 let _fnrSessionRejected = []; // {title, author} replaced/rejected earlier in this sitting; cleared on fresh open
+let _fnrSessionShown    = []; // {title, author} shown on screen at any point this sitting (rejected or not) — cleared on fresh open. Distinct from _fnrSessionRejected: this catches the "resubmit within the same sitting" case (e.g. Edit Preferences -> toggle Surprise -> submit again), so an earlier batch's un-rejected results can't simply repeat.
 let _fnrRejectedSlots   = new Set(); // slot indices currently marked as permanently rejected (dimmed state)
 let _fnrQuestMode = false; // true when opened via the quest's Find Your Next Read handoff (see questHandoffToFNR)
 
@@ -4425,6 +4426,7 @@ function openFindNextRead(fromQuest = false) {
   _fnrQuestMode = fromQuest;
   _fnrFormState = null;
   _fnrSessionRejected = [];
+  _fnrSessionShown = [];
   _fnrRejectedSlots = new Set();
   document.getElementById('wishlist-main').style.display = 'none';
   document.getElementById('fnr-content').style.display   = 'block';
@@ -4663,13 +4665,15 @@ function _fnrNormKey(title, author) {
 
 /**
  * Builds the deduped, capped list of {title, author} the AI must never
- * recommend: permanent rejects > session rejects > wishlist > library
- * (library's already-in-profile top-rated books dropped first if truncating).
+ * recommend: permanent rejects > session rejects > session shown > wishlist >
+ * library (library's already-in-profile top-rated books dropped first if
+ * truncating).
  */
 async function _fnrExcludedTitles() {
   const CAP = 250;
   const permanentRejects = (await dbGetMeta('fnr_rejected_forever')) || [];
   const sessionRejects   = _fnrSessionRejected;
+  const sessionShown     = _fnrSessionShown;
   const wishlistItems    = wishlist.map(w => ({ title: w.title, author: w.author || '' }));
 
   const topRatedIds = new Set(
@@ -4680,7 +4684,7 @@ async function _fnrExcludedTitles() {
   const libraryRest     = books.filter(b => !topRatedIds.has(b.id)).map(b => ({ title: b.title, author: b.author || '' }));
   const libraryTopRated = books.filter(b => topRatedIds.has(b.id)).map(b => ({ title: b.title, author: b.author || '' }));
 
-  const tiers  = [permanentRejects, sessionRejects, wishlistItems, libraryRest, libraryTopRated];
+  const tiers  = [permanentRejects, sessionRejects, sessionShown, wishlistItems, libraryRest, libraryTopRated];
   const seen   = new Set();
   const result = [];
   for (const tier of tiers) {
@@ -4820,6 +4824,11 @@ async function submitFindNextRead() {
   // (_fnrSessionRejected) are both correctly keyed by title/author already
   // and are untouched here — this only clears the stale UI-dimming state.
   _fnrRejectedSlots = new Set();
+  // Remember these 5 as "shown this sitting" regardless of whether any get
+  // rejected — so a resubmit later in the same sitting (e.g. Edit
+  // Preferences -> toggle Surprise -> submit again) can't repeat one via
+  // _fnrExcludedTitles(), even if the reader never explicitly rejected it.
+  results.forEach(r => _fnrSessionShown.push({ title: r.title, author: r.author || '' }));
   _fnrRenderResults();
   _fnrRenderResolutionLine(s.reference, resolution);
   document.getElementById('fnr-quest-exit').classList.toggle('hidden', !_fnrQuestMode);
@@ -4990,6 +4999,9 @@ async function fnrReplaceResult(index) {
     const newRec  = parsed.recommendation || (parsed.recommendations && parsed.recommendations[0]);
     if (!newRec) throw new Error();
     _fnrResults[index] = newRec;
+    // Same reasoning as submitFindNextRead's _fnrSessionShown push — this
+    // replacement is now "shown this sitting" too, so it can't repeat later.
+    _fnrSessionShown.push({ title: newRec.title, author: newRec.author || '' });
     // The rejected flag belongs to the old book in this slot, not the new one.
     _fnrRejectedSlots.delete(index);
     const card = document.getElementById(`fnr-card-${index}`);
