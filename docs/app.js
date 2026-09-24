@@ -4664,16 +4664,55 @@ function _fnrNormKey(title, author) {
 }
 
 /**
+ * Cross-session "recently recommended" memory (Batch 2 of the FNR quality
+ * fixes — see /memories/repo/fnr-recommendation-quality.md). Stored as
+ * `fnr_recent_searches` in the meta store: an array of BATCHES (one batch
+ * per submit), each batch itself an array of {title, author}. Retention is
+ * COUNT-based (last N searches), not date-based, per explicit user
+ * decision — so a heavy tester and an occasional user both get "don't
+ * repeat my last N searches worth" rather than an arbitrary calendar
+ * window. Capped independently of the 250-item _fnrExcludedTitles CAP
+ * (this just controls how many batches are kept before the oldest is
+ * dropped; the titles themselves still flow through the same dedup/cap
+ * logic as every other exclusion tier).
+ */
+const FNR_RECENT_SEARCH_BATCHES = 15;
+
+/** Appends a new batch (this submit's results) and trims to the last
+ * FNR_RECENT_SEARCH_BATCHES batches. Called once per successful submit. */
+async function _fnrRecordRecentSearch(items) {
+  const batch = items.map(r => ({ title: r.title, author: r.author || '' })).filter(b => b.title);
+  if (!batch.length) return;
+  const batches = (await dbGetMeta('fnr_recent_searches')) || [];
+  batches.push(batch);
+  while (batches.length > FNR_RECENT_SEARCH_BATCHES) batches.shift();
+  await dbSetMeta('fnr_recent_searches', batches);
+}
+
+/** A Replace swaps one slot within the CURRENT submit's batch — appended to
+ * the most recent batch (rather than starting a new one) so it's excluded
+ * on future searches exactly like the rest of that same batch would be. */
+async function _fnrAppendToRecentSearch(item) {
+  if (!item || !item.title) return;
+  const batches = (await dbGetMeta('fnr_recent_searches')) || [];
+  if (!batches.length) { batches.push([]); }
+  batches[batches.length - 1].push({ title: item.title, author: item.author || '' });
+  await dbSetMeta('fnr_recent_searches', batches);
+}
+
+/**
  * Builds the deduped, capped list of {title, author} the AI must never
- * recommend: permanent rejects > session rejects > session shown > wishlist >
- * library (library's already-in-profile top-rated books dropped first if
- * truncating).
+ * recommend: permanent rejects > session rejects > session shown > recent
+ * searches (cross-session) > wishlist > library (library's already-in-profile
+ * top-rated books dropped first if truncating).
  */
 async function _fnrExcludedTitles() {
   const CAP = 250;
   const permanentRejects = (await dbGetMeta('fnr_rejected_forever')) || [];
   const sessionRejects   = _fnrSessionRejected;
   const sessionShown     = _fnrSessionShown;
+  const recentBatches    = (await dbGetMeta('fnr_recent_searches')) || [];
+  const recentSearches   = recentBatches.flat();
   const wishlistItems    = wishlist.map(w => ({ title: w.title, author: w.author || '' }));
 
   const topRatedIds = new Set(
@@ -4684,7 +4723,7 @@ async function _fnrExcludedTitles() {
   const libraryRest     = books.filter(b => !topRatedIds.has(b.id)).map(b => ({ title: b.title, author: b.author || '' }));
   const libraryTopRated = books.filter(b => topRatedIds.has(b.id)).map(b => ({ title: b.title, author: b.author || '' }));
 
-  const tiers  = [permanentRejects, sessionRejects, sessionShown, wishlistItems, libraryRest, libraryTopRated];
+  const tiers  = [permanentRejects, sessionRejects, sessionShown, recentSearches, wishlistItems, libraryRest, libraryTopRated];
   const seen   = new Set();
   const result = [];
   for (const tier of tiers) {
@@ -4829,6 +4868,10 @@ async function submitFindNextRead() {
   // Preferences -> toggle Surprise -> submit again) can't repeat one via
   // _fnrExcludedTitles(), even if the reader never explicitly rejected it.
   results.forEach(r => _fnrSessionShown.push({ title: r.title, author: r.author || '' }));
+  // Cross-session memory (Batch 2) — persists past this sitting so the same
+  // 5 don't resurface on a later day's search either. Fire-and-forget: does
+  // not block rendering results.
+  _fnrRecordRecentSearch(results);
   _fnrRenderResults();
   _fnrRenderResolutionLine(s.reference, resolution);
   document.getElementById('fnr-quest-exit').classList.toggle('hidden', !_fnrQuestMode);
@@ -5002,6 +5045,11 @@ async function fnrReplaceResult(index) {
     // Same reasoning as submitFindNextRead's _fnrSessionShown push — this
     // replacement is now "shown this sitting" too, so it can't repeat later.
     _fnrSessionShown.push({ title: newRec.title, author: newRec.author || '' });
+    // Cross-session memory (Batch 2) — same reasoning as
+    // submitFindNextRead's _fnrRecordRecentSearch call, but appended into
+    // the current batch (a Replace is part of the same submit's sitting,
+    // not a new search of its own).
+    _fnrAppendToRecentSearch(newRec);
     // The rejected flag belongs to the old book in this slot, not the new one.
     _fnrRejectedSlots.delete(index);
     const card = document.getElementById(`fnr-card-${index}`);
