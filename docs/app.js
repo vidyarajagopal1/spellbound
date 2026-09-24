@@ -29,7 +29,7 @@ const DRIVE_BACKUP_PREFIX    = 'spellbound-data-backup-';
 const DRIVE_PREMERGE_BACKUP_PREFIX = 'spellbound-premerge-backup-';
 const PREMERGE_BACKUP_KEEP_COUNT   = 3; // "at least the last three" — these are the ones actually meant to be restored from
 const SILENT_SIGNIN_TIMEOUT_MS = 8000; // if a silent (prompt:'') token request never calls back at all (seen with blocked third-party cookies etc.), stop waiting after this long
-const SYNC_MERGE_TIMEOUT_MS = 15000; // _maybeRunSyncMerge() chains several sequential Drive API calls (file lookup, modifiedTime check, fetch+merge, pre-merge backup, final write) with no per-call timeout of its own; if any one of them stalls (flaky connection), _maybeRunSyncMergeGuarded() below stops waiting after this long instead of leaving callers/#sync-status stuck on "Syncing…" forever
+const SYNC_MERGE_TIMEOUT_MS = 28000; // _maybeRunSyncMerge() chains several sequential Drive API calls (file lookup, modifiedTime check, fetch+merge, pre-merge backup, final write) with no per-call timeout of its own; if any one of them stalls (flaky connection), _maybeRunSyncMergeGuarded() below stops waiting after this long instead of leaving callers/#sync-status stuck on "Syncing…" forever. Raised from 15000 -> 28000: on a slow mobile connection the chain routinely took longer than 15s to legitimately finish, tripping the fallback (and, before this fix, a scary 'Sync failed') on nearly every load
 let _tokenExpiresAt      = 0;     // epoch ms; 0 = no token / unknown expiry yet
 let _tokenRefreshPromise = null;  // in-flight silent refresh, deduped across callers
 let _pendingTokenResolve = null;  // resolves whichever call is awaiting the in-flight refresh
@@ -728,13 +728,14 @@ async function _maybeRunSyncMerge(trigger) {
   }
   _mergeCheckLastModifiedTime = currentModifiedTime;
 
-  let merged, stats;
+  let merged, stats, remotePayloadString;
   try {
     const res = await gapi.client.request({
       path:   `https://www.googleapis.com/drive/v3/files/${fileId}`,
       method: 'GET',
       params: { alt: 'media' }
     });
+    remotePayloadString = typeof res.result === 'string' ? res.result : JSON.stringify(res.result);
     const remote = typeof res.result === 'string' ? JSON.parse(res.result) : res.result;
     const local  = await _buildLocalSnapshotForMergeCheck();
     ({ merged, stats } = mergeLibrariesWithStats(local, remote));
@@ -746,8 +747,10 @@ async function _maybeRunSyncMerge(trigger) {
 
   // Safety net: must succeed before ANY live write (or, in dry mode, is
   // still exercised so it stays proven-working — see v201). Fails closed —
-  // a failed backup here means we fall back to today's push-or-pull.
-  const backupOk = await _ensurePreMergeBackup(fileId);
+  // a failed backup here means we fall back to today's push-or-pull. Passes
+  // the content we already fetched above (nothing has written to Drive in
+  // between) so this doesn't re-download the same file a second time.
+  const backupOk = await _ensurePreMergeBackup(fileId, remotePayloadString);
   if (!backupOk) {
     console.warn(`${SYNC_MERGE_LOG_PREFIX} pre-merge backup failed — not writing merged result, falling back to today's push-or-pull behaviour`);
     return false;
@@ -805,8 +808,14 @@ async function _maybeRunSyncMergeGuarded(trigger) {
   let timeoutId;
   const timeout = new Promise(resolve => {
     timeoutId = setTimeout(() => {
+      // Deliberately does NOT call updateSyncStatus('Sync failed', ...) here.
+      // The real _maybeRunSyncMerge() call keeps running in the background
+      // even after we stop waiting on it — this is just giving up on THIS
+      // attempt in favour of the plain push-or-pull fallback, which is a
+      // normal, expected path (not an error), and that fallback will set its
+      // own status shortly after. Surfacing a scary "Sync failed" here for
+      // what is routinely just a slow-but-fine merge chain was misleading.
       console.warn(`${SYNC_MERGE_LOG_PREFIX} timed out after ${SYNC_MERGE_TIMEOUT_MS}ms (trigger: ${trigger}) — giving up waiting, falling back to today's push-or-pull behaviour`);
-      updateSyncStatus('Sync failed', true);
       resolve(false);
     }, SYNC_MERGE_TIMEOUT_MS);
   });
@@ -936,13 +945,15 @@ async function _pruneOldDriveBackups() {
 // session via _preMergeBackupDoneThisSession (set true only on success, so a
 // failed attempt is retried on the next trigger rather than being silently
 // skipped forever).
-async function _ensurePreMergeBackup(fileId) {
+async function _ensurePreMergeBackup(fileId, existingPayloadString) {
   if (_preMergeBackupDoneThisSession) return true;
   try {
     const backupName = `${DRIVE_PREMERGE_BACKUP_PREFIX}${Date.now()}.json`;
-    await _copyDriveFileToBackup(fileId, backupName, null);
+    await _copyDriveFileToBackup(fileId, backupName, existingPayloadString != null ? existingPayloadString : null);
     _preMergeBackupDoneThisSession = true;
-    await _prunePreMergeBackups();
+    // Pruning is housekeeping only (fails open, doesn't gate the safety net
+    // itself) — don't make the real write wait on it.
+    _prunePreMergeBackups().catch(() => {});
     return true;
   } catch (err) {
     console.error(`${SYNC_MERGE_LOG_PREFIX} pre-merge backup failed — live-mode write must not proceed, falling back to today's push-or-pull behaviour`, err);
