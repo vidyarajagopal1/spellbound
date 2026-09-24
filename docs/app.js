@@ -4273,7 +4273,7 @@ Your task: return exactly 5 book recommendations based on the reader's request b
 MESSAGE STRUCTURE YOU WILL RECEIVE (read in this priority order):
 1. READER'S REQUEST — the reader's explicit, current picks (genre, a reference to a book or an author, what they're trying to recreate from it, what to avoid). This is the PRIMARY signal. Every recommendation must plausibly satisfy it.
 2. EXCLUDE LIST — titles you must never recommend, under any circumstance (already owned, wishlisted, or previously rejected by this reader).
-3. TASTE CALIBRATION ONLY — the reader's past ratings/highlights. This is SECONDARY flavor used only to fine-tune tone or style among books that already satisfy the request. It must never override, dilute, or substitute for the request. If the calibration data seems to point somewhere else entirely, ignore it in favor of the explicit request.
+3. TASTE CALIBRATION ONLY — the reader's past ratings/highlights, and a full title/author list of their library. This is SECONDARY flavor used only to fine-tune tone or style, or to notice patterns like a recurring geography/culture (see rule 11), among books that already satisfy the request. It must never override, dilute, or substitute for the request. If the calibration data seems to point somewhere else entirely, ignore it in favor of the explicit request.
 4. VARIETY TOKEN — an internal value that must never be mentioned, explained, or treated as user-visible content.
 
 RESOLVING THE REFERENCE FIELD:
@@ -4294,6 +4294,7 @@ CRITICAL RULES:
 8. Recency: when nothing in the request signals a preference for older/classic/vintage work, favor including 1–2 more recently published titles (roughly the last several years) among the 5. When the request signals a classic, vintage, or historical preference (e.g. genre is historical fiction, or the reader's text mentions "classic"/"old"/similar), do not force recency — pick what genuinely fits instead.
 9. Use the VARIETY TOKEN only to vary which valid, request-satisfying candidates you surface when there are multiple equally good options — never as a reason to pick something that doesn't fit the request, and never mention it in your output.
 10. SURPRISE MODE: If the READER'S REQUEST contains "SURPRISE ME", the reader has deliberately skipped genre and reference so you can break from their usual pattern. In this mode, the TASTE CALIBRATION block is not a target to satisfy — read it strictly as a description of what to move away from: the genres, tones, and authors it reflects are what all 5 picks must diverge from, never what they should resonate with. Concretely: none of the 5 authors may already appear in the TASTE CALIBRATION profile. All 5 recommendations must be off-pattern — not one or two divergent picks propped up by three familiar ones. The EXCLUDE LIST and any AVOID text still apply in full. This overrides rule 6's fallback: the "SURPRISE ME" line itself is the specific signal to cite in "why_it_fits" — name what the pick departs from (a genre, tone, or author absent from the reader's calibration profile), never what it resonates with. Do not cite a calibration-profile book or highlight as justification in this mode.
+11. AUTHOR VARIETY ACROSS REGIONS AND CULTURES: two related but independent defaults, both strictly secondary to the READER'S REQUEST and rule 8's recency guidance — never include a weaker match just to satisfy either half of this rule. First, a baseline habit: when nothing about the request specifically calls for one region, favor a mix of authorial backgrounds across the 5 rather than defaulting entirely to Western/Anglophone authors by default. Second, a personal signal: if the FULL LIBRARY block in TASTE CALIBRATION shows a genuine cluster of titles tied to one region, culture, or tradition (for example, several Indian mythology titles), treat that cluster exactly like the rest of TASTE CALIBRATION — optional secondary flavor you may draw on for one recommendation that reflects the same tradition, never a quota, never something that overrides the explicit request. If the request and recency already fill all 5 slots on their own merits, that is a complete, correct answer — neither half of this rule is a reason to swap out a better-fitting book.
 
 RESPONSE FORMAT — return this exact JSON structure:
 {
@@ -4621,7 +4622,21 @@ function _fnrBuildUserContext() {
     .slice(0, 20)
     .map(b => ({ title: b.title, author: b.author || '', category: b.category, stars: b.grRating }));
 
-  return { topRatedBooks, pausedBooks, medium, densityTop5, importedRatedBooks };
+  // Whole-library title/author sample (Batch 3+4 of the FNR quality fixes —
+  // see /memories/repo/fnr-recommendation-quality.md). The blocks above only
+  // ever surface top-rated/paused/highlighted/imported-rated books, so a
+  // shelf of e.g. several Indian mythology titles that are simply
+  // "Completed" with no rating/highlights would otherwise be invisible to
+  // the AI. This is a bare title+author list (no rating/status) purely so
+  // the AI can notice its own patterns (a recurring geography, culture, or
+  // theme) — capped so it doesn't blow out the prompt alongside the
+  // already-capped 250-item exclude list.
+  const FNR_LIBRARY_SAMPLE_CAP = 300;
+  const librarySample = books
+    .slice(0, FNR_LIBRARY_SAMPLE_CAP)
+    .map(b => ({ title: b.title, author: b.author || '' }));
+
+  return { topRatedBooks, pausedBooks, medium, densityTop5, importedRatedBooks, librarySample };
 }
 
 function _fnrSerializeContext(ctx) {
@@ -4653,6 +4668,10 @@ function _fnrSerializeContext(ctx) {
     if (ctx.medium.audiobook) lines.push(`- Audiobooks: ${ctx.medium.audiobook}/${total}`);
     if (ctx.medium.kindle)    lines.push(`- Kindle/digital: ${ctx.medium.kindle}/${total}`);
     if (ctx.medium.physical)  lines.push(`- Physical: ${ctx.medium.physical}/${total}`);
+  }
+  if (ctx.librarySample.length) {
+    lines.push('\nFULL LIBRARY, TITLES AND AUTHORS ONLY (look here for patterns you can\'t see from the smaller lists above — e.g. a recurring geography, culture, or tradition. Use only as a soft, secondary signal like the rest of this profile — never override or dilute the explicit request):');
+    ctx.librarySample.forEach(b => lines.push(`- "${b.title}"${b.author ? ` by ${b.author}` : ''}`));
   }
   return lines.join('\n');
 }
