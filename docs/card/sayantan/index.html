@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>A postcard from SpellBound</title>
+<meta name="description" content="Your pile, and two books it suggested. Tap to turn it over.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="A postcard from SpellBound">
+<meta property="og:description" content="Your pile, and two books it suggested. Tap to turn it over.">
+<meta property="og:url" content="https://spellboundapp.in/card/sayantan/">
+<meta property="og:image" content="https://spellboundapp.in/card/sayantan/preview.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="851">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    min-height: 100dvh;
+    padding: env(safe-area-inset-top, 0) 16px env(safe-area-inset-bottom, 0);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px;
+    background: #F3EADA;
+    font-family: Georgia, "Times New Roman", serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .stage {
+    width: min(820px, 100%, calc((100dvh - 96px) * 1.4097));
+    perspective: 1800px;
+  }
+  .card {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1748 / 1240;
+    transform-style: preserve-3d;
+    transition: transform .65s cubic-bezier(.2,.7,.25,1);
+    cursor: pointer;
+  }
+  .card.flipped { transform: rotateY(180deg); }
+  .face {
+    position: absolute; inset: 0;
+    backface-visibility: hidden; -webkit-backface-visibility: hidden;
+    border-radius: 6px; overflow: hidden;
+    box-shadow: 0 10px 30px rgba(74, 44, 42, .28);
+  }
+  .face img { width: 100%; height: 100%; display: block; object-fit: cover; }
+  .back { transform: rotateY(180deg); }
+  .hint {
+    font-size: 15px; letter-spacing: .04em; color: #7A5C50;
+    background: none; border: 0; font-family: inherit; cursor: pointer;
+  }
+  /* Upright phone: turn the card side-on so it fills the screen. */
+  @media (orientation: portrait) and (max-width: 700px) {
+    body { overflow: hidden; padding: 0; justify-content: center; }
+    .stage {
+      width: min(86dvh, calc(100dvw * 1.4097 - 24px));
+      transform: rotate(90deg);
+    }
+    .hint { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  }
+  @media (prefers-reduced-motion: reduce) { .card { transition: none; } }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="card" id="card" role="button" tabindex="0"
+         aria-label="Postcard, tap to turn over">
+      <div class="face"><img src="front.png" alt="Your pile, with two book recommendations"></div>
+      <div class="face back"><img src="back.png" alt="A thank you note"></div>
+    </div>
+  </div>
+  <button class="hint" id="hint" type="button">Tap the card to flip it over</button>
+<script>
+  var card = document.getElementById('card'), hint = document.getElementById('hint');
+  function flip() {
+    card.classList.toggle('flipped');
+    hint.textContent = card.classList.contains('flipped')
+      ? 'Tap the card to flip it back' : 'Tap the card to flip it over';
+  }
+  card.addEventListener('click', flip);
+  hint.addEventListener('click', flip);
+  card.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); }
+  });
+</script>
+</body>
+</html>
