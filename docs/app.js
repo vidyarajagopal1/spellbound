@@ -30,6 +30,7 @@ const DRIVE_PREMERGE_BACKUP_PREFIX = 'spellbound-premerge-backup-';
 const PREMERGE_BACKUP_KEEP_COUNT   = 3; // "at least the last three" — these are the ones actually meant to be restored from
 const SILENT_SIGNIN_TIMEOUT_MS = 8000; // if a silent (prompt:'') token request never calls back at all (seen with blocked third-party cookies etc.), stop waiting after this long
 const SYNC_MERGE_TIMEOUT_MS = 28000; // _maybeRunSyncMerge() chains several sequential Drive API calls (file lookup, modifiedTime check, fetch+merge, pre-merge backup, final write) with no per-call timeout of its own; if any one of them stalls (flaky connection), _maybeRunSyncMergeGuarded() below stops waiting after this long instead of leaving callers/#sync-status stuck on "Syncing…" forever. Raised from 15000 -> 28000: on a slow mobile connection the chain routinely took longer than 15s to legitimately finish, tripping the fallback (and, before this fix, a scary 'Sync failed') on nearly every load
+const INITIAL_SIGNIN_SYNC_TIMEOUT_MS = 15000; // Hard ceiling on the ENTIRE initial sign-in sync decision in _handleTokenResponse (the live-merge attempt above, PLUS its plain syncToDrive()/syncFromDrive() fallback). The merge attempt already has its own SYNC_MERGE_TIMEOUT_MS guard, but syncToDrive()/syncFromDrive() themselves have no timeout of their own at all — on a bad mobile connection this combination could leave #sync-status frozen on "Signing in…" (nothing updates that text until deep inside these calls) for 30-50+ seconds, long enough to crash the tab. This cap guarantees the app becomes usable locally within this long regardless of network conditions; it does NOT cancel the underlying work, which keeps running in the background and may still update #sync-status/local data after the cap fires (same accepted trade-off as SYNC_MERGE_TIMEOUT_MS/SILENT_SIGNIN_TIMEOUT_MS above).
 let _tokenExpiresAt      = 0;     // epoch ms; 0 = no token / unknown expiry yet
 let _tokenRefreshPromise = null;  // in-flight silent refresh, deduped across callers
 let _pendingTokenResolve = null;  // resolves whichever call is awaiting the in-flight refresh
@@ -424,6 +425,41 @@ async function _handleTokenResponse(resp) {
   localStorage.setItem(GOOGLE_SIGNIN_FLAG_KEY, '1');
   setLoggedInUI(true);
   _setAuthState('signed-in');
+  // Hard-capped at INITIAL_SIGNIN_SYNC_TIMEOUT_MS: the merge attempt inside
+  // has its own (longer) internal guard, and the plain syncToDrive()/
+  // syncFromDrive() fallback it can fall through to has NO timeout of its
+  // own at all — without this outer cap, a bad mobile connection could leave
+  // #sync-status frozen on "Signing in…" indefinitely. This does not cancel
+  // the underlying work; see the constant's own comment for the full
+  // rationale.
+  await _withTimeout(_performInitialSignInSync(), INITIAL_SIGNIN_SYNC_TIMEOUT_MS, 'initial sign-in sync')
+    .catch(err => console.warn('_performInitialSignInSync unexpected error', err));
+  if (resolvePending) resolvePending();
+}
+
+// Races `promise` against a `ms`-millisecond timeout. Does NOT cancel the
+// underlying operation — it keeps running in the background and may still
+// resolve/update state or UI after the timeout already fired (same accepted
+// trade-off already made by SYNC_MERGE_TIMEOUT_MS/SILENT_SIGNIN_TIMEOUT_MS
+// elsewhere in this file). Only used to put a hard ceiling on how long the
+// UI can be left waiting on a chain of network calls that has no timeout of
+// its own.
+function _withTimeout(promise, ms, label) {
+  let timeoutId;
+  const timeout = new Promise(resolve => {
+    timeoutId = setTimeout(() => {
+      console.warn(`[sync] ${label} timed out after ${ms}ms — giving up waiting, app remains usable locally`);
+      resolve();
+    }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
+
+// The merge attempt + its plain push/pull fallback, factored out of
+// _handleTokenResponse so the whole thing can be raced against
+// INITIAL_SIGNIN_SYNC_TIMEOUT_MS above. Behavior is otherwise byte-for-byte
+// identical to what previously lived inline in _handleTokenResponse.
+async function _performInitialSignInSync() {
   if (_syncMergeMode === 'live') {
     // Live mode: a successful merge write here replaces the one-time
     // push-or-pull decision below entirely — mark it done so that decision
@@ -491,7 +527,6 @@ async function _handleTokenResponse(resp) {
     }
     await _initialSyncPromise;
   }
-  if (resolvePending) resolvePending();
 }
 
 // Refreshes the access token if it's missing or within 60s of expiring.
@@ -1106,6 +1141,7 @@ async function syncToDrive() {
   }
   await _initialLoadPromise;
   await _ensureFreshToken();
+  updateSyncStatus('Syncing…');
   try {
     const waitlistOrder = await dbGetMeta('waitlist-order') || [];
     const wishlistOrder = await dbGetMeta('wishlist-order') || [];
