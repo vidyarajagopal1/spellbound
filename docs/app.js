@@ -7718,8 +7718,20 @@ async function boot() {
     await loadData();
     await _backfillMissingUpdatedAt();
     // No UI for this yet — set via console with dbSetMeta('sync_merge_mode',
-    // 'off'|'dry'|'live') then reload. Defaults to 'live' when unset.
-    _syncMergeMode = (await dbGetMeta('sync_merge_mode')) || 'live';
+    // 'off'|'dry'|'live') then reload. TEMPORARILY defaulted to 'off'
+    // (2026-09-25, urgent crash mitigation before shipping to a test group —
+    // see /memories/repo/auth-session.md's v230 entry): the live-merge chain
+    // (_maybeRunSyncMerge) is the heaviest, most recently-added background
+    // work that runs right after sign-in, and is the leading (unconfirmed)
+    // suspect for a mobile tab crash that started right after it shipped.
+    // 'off' skips _maybeRunSyncMerge entirely (its very first line is `if
+    // (_syncMergeMode === 'off') return false`) — no fileId lookup, no
+    // modifiedTime check, no remote fetch, no pre-merge backup, nothing.
+    // Every device falls back to the older, long-proven push local-if-any-
+    // records-else-pull path. No local data is at risk either way — an
+    // already-populated device only ever pushes, never pulls. Revert to
+    // 'live' once the real crash cause is confirmed and fixed.
+    _syncMergeMode = (await dbGetMeta('sync_merge_mode')) || 'off';
   } catch (err) {
     // _initialLoadPromise is a hard gate on every sync path (syncToDrive/
     // syncFromDrive/_handleTokenResponse all await it) — it must resolve no
