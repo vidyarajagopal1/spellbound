@@ -3037,22 +3037,51 @@ function _toTitleCaseForQuery(s) {
 }
 
 // Titles/subtitles matching this are companion material (study guides,
-// summaries, discussion guides, etc.) rather than the actual book itself —
+// summaries, discussion guides, trivia/conversation-starter spinoffs,
+// standalone "notes" products, etc.) rather than the actual book itself —
 // dropped from all search results everywhere, never the real work.
-const STUDY_GUIDE_PATTERN = /\b(study guide|summary (?:of|and|&)|summary\s*[:\-]|analysis of|discussion guide|book club guide|cliffs?notes|sparknotes|study aid|companion guide|unofficial guide)\b/i;
+// NOTE: deliberately does NOT include a bare "notes on" — that would also
+// match legitimate book titles (e.g. "Notes on a Scandal", "Notes on
+// Grief"), so only clearly-companion phrasings are listed here.
+const STUDY_GUIDE_PATTERN = /\b(study guide|summary (?:of|and|&)|summary\s*[:\-]|analysis of|discussion guide|discussion questions|conversation starters|book club guide|cliffs?notes|sparknotes|study aid|companion guide|unofficial guide|book notes|study notes|chapter notes|lecture notes|trivia[\s-]*on[\s-]*books?)\b/i;
+
+// Strips a "by <Author Name>" phrase baked directly into a title/subtitle
+// string when it names one of THIS item's own listed authors (checked
+// against that item's real metadata, not a generic "by ..." regex, so a
+// legitimate title that happens to contain the word "by" is never
+// touched). Some low-effort reprint listings repeat the author's name in
+// the title itself, which both looks redundant (the author already shows
+// on its own line) and breaks title-based duplicate detection since the
+// "clean" listing and this one no longer normalize to the same key.
+function _stripAuthorFromTitle(str, authors) {
+  if (!str || !authors || !authors.length) return str;
+  let result = str;
+  for (const a of authors) {
+    if (!a) continue;
+    const escaped = a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    result = result.replace(new RegExp(`\\s*\\bby\\s+${escaped}\\b`, 'i'), '');
+  }
+  return result.trim();
+}
 
 // Maps a raw Google Books API response into the app's normalized result
 // shape. Shared by googleBooksSearch and googleBooksIncrementalSearch.
-// Also applies two cross-cutting filters here (so every caller gets them
-// for free): English-only, and drops study-guide/summary companion books.
+// Also applies cross-cutting cleanup/filters here (so every caller gets
+// them for free): strips a baked-in "by <author>" phrase, English-only,
+// drops study-guide/summary/companion-product listings, and cleans
+// edition/format noise out of the DISPLAYED title (not just an internal
+// matching key — see _cleanDisplayTitle).
 function _mapGoogleBooksItems(data) {
   return (data.items || []).map(it => {
     const v = it.volumeInfo || {};
+    const authors = v.authors || [];
+    const title = _stripAuthorFromTitle(v.title || '', authors);
+    const subtitle = _stripAuthorFromTitle(v.subtitle || '', authors);
     return {
-      title:       v.title || '',
-      subtitle:    v.subtitle || '',
-      fullTitle:   v.subtitle ? `${v.title}: ${v.subtitle}` : (v.title || ''),
-      author_name: v.authors || [],
+      title,
+      subtitle,
+      fullTitle:   subtitle ? `${title}: ${subtitle}` : title,
+      author_name: authors,
       subject:     v.categories || [],
       description: v.description || '',
       language:    v.language || '',
@@ -3071,7 +3100,13 @@ function _mapGoogleBooksItems(data) {
     // genuinely-English-but-untagged result. Now strict: only keep
     // entries explicitly tagged 'en'.
     .filter(r => r.language === 'en')
-    .filter(r => !STUDY_GUIDE_PATTERN.test(r.fullTitle) && !(r.subject || []).some(c => /study aids/i.test(c)));
+    .filter(r => !STUDY_GUIDE_PATTERN.test(r.fullTitle) && !(r.subject || []).some(c => /study aids/i.test(c)))
+    // Display should never show raw edition/format noise (illustrated,
+    // anniversary, special edition, bracketed imprint tags, ": A Novel",
+    // etc.) — previously only the internal dedup KEY got this cleanup
+    // (_dedupeTitleKey); now the same cleaned text is what's actually
+    // shown on the card too (see _cleanDisplayTitle, defined below).
+    .map(r => ({ ...r, fullTitle: _cleanDisplayTitle(r.fullTitle) }));
 }
 
 // Phrases/bracketed tags that mark a specific EDITION or format variant of a
@@ -3083,6 +3118,21 @@ const EDITION_NOISE_PATTERN = /\s*[\(\[][^)\]]*[\)\]]|\b(illustrated|annotated|u
 
 function _dedupeTitleKey(title) {
   return normalizeBookQuery((title || '').replace(EDITION_NOISE_PATTERN, ' ')).toLowerCase();
+}
+
+// Cleans a title for DISPLAY: strips the same edition/format noise as
+// _dedupeTitleKey (illustrated, anniversary, special edition, bracketed
+// imprint tags, ": A Novel", etc.) but — unlike that function — keeps real
+// punctuation/casing and never lowercases/strips other punctuation, since
+// this is shown to the reader, not used as an internal matching key. A
+// genuine subtitle (e.g. "Sapiens: A Brief History of Humankind") is left
+// alone because none of its words match EDITION_NOISE_PATTERN.
+function _cleanDisplayTitle(str) {
+  return (str || '')
+    .replace(EDITION_NOISE_PATTERN, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*:\s*$/, '') // dangling colon left when a subtitle was pure edition-noise
+    .trim();
 }
 
 // Honorific/title words that some catalog editions prepend/append to an
@@ -3105,7 +3155,12 @@ function _dedupeAuthorKey(author) {
 // see EDITION_NOISE_PATTERN) + first author, both lowercased. When two
 // results share a key, prefer the one with the higher ratingsCount (the
 // edition most readers actually know/own); tie-break on whichever has a
-// cover thumb, then whichever appeared first.
+// cover thumb, then whichever appeared first. Once a STRONGER version of
+// the same book (one with a cover and/or any ratings) is already present,
+// a bare no-cover/zero-rating entry (typically a low-effort reprint) is
+// dropped outright rather than kept as a second row — but a book that is
+// genuinely obscure everywhere (no signal on either entry) is never
+// dropped, since it may be the reader's only real match.
 function _dedupeBookResults(results) {
   const seen = new Map();
   for (const r of results) {
@@ -3117,6 +3172,10 @@ function _dedupeBookResults(results) {
     }
     const rRatings = r.ratingsCount || 0;
     const eRatings = existing.ratingsCount || 0;
+    const rHasSignal = rRatings > 0 || !!r.thumb;
+    const eHasSignal = eRatings > 0 || !!existing.thumb;
+    if (eHasSignal && !rHasSignal) continue; // new one is a bare reprint dupe — drop it
+    if (rHasSignal && !eHasSignal) { seen.set(key, r); continue; } // existing was the bare reprint — replace it
     if (rRatings > eRatings) {
       seen.set(key, r);
     } else if (rRatings === eRatings && !existing.thumb && r.thumb) {
