@@ -4343,7 +4343,7 @@ Your task: return exactly 5 book recommendations based on the reader's request b
 MESSAGE STRUCTURE YOU WILL RECEIVE (read in this priority order):
 1. READER'S REQUEST — the reader's explicit, current picks (genre, a reference to a book or an author, what they're trying to recreate from it, what to avoid). This is the PRIMARY signal. Every recommendation must plausibly satisfy it.
 2. EXCLUDE LIST — titles you must never recommend, under any circumstance (already owned, wishlisted, or previously rejected by this reader).
-3. TASTE CALIBRATION ONLY — the reader's past ratings/highlights, and a full title/author list of their library. This is SECONDARY flavor used only to fine-tune tone or style, or to notice patterns like a recurring geography/culture (see rule 11), among books that already satisfy the request. It must never override, dilute, or substitute for the request. If the calibration data seems to point somewhere else entirely, ignore it in favor of the explicit request.
+3. TASTE CALIBRATION ONLY — the reader's past ratings/highlights, weaker positive/negative signals (see rule 13), current reading/queue, and a full title/author list of their library. This is SECONDARY flavor used only to fine-tune tone or style, or to notice patterns like a recurring geography/culture (see rule 11), among books that already satisfy the request. It must never override, dilute, or substitute for the request. If the calibration data seems to point somewhere else entirely, ignore it in favor of the explicit request.
 4. VARIETY TOKEN — an internal value that must never be mentioned, explained, or treated as user-visible content.
 
 RESOLVING THE REFERENCE FIELD:
@@ -4366,6 +4366,7 @@ CRITICAL RULES:
 10. SURPRISE MODE: If the READER'S REQUEST contains "SURPRISE ME", the reader has deliberately skipped genre and reference so you can break from their usual pattern. In this mode, the TASTE CALIBRATION block is not a target to satisfy — read it strictly as a description of what to move away from: the genres, tones, and authors it reflects are what all 5 picks must diverge from, never what they should resonate with. Concretely: none of the 5 authors may already appear in the TASTE CALIBRATION profile. All 5 recommendations must be off-pattern — not one or two divergent picks propped up by three familiar ones. The EXCLUDE LIST and any AVOID text still apply in full. This overrides rule 6's fallback: the "SURPRISE ME" line itself is the specific signal to cite in "why_it_fits" — name what the pick departs from (a genre, tone, or author absent from the reader's calibration profile), never what it resonates with. Do not cite a calibration-profile book or highlight as justification in this mode. Rule 12's second-person voice requirement applies here too, with no exception — write this as a direct departure from the reader's own pattern ("this steps outside the [genre]/quiet-literary-fiction you usually reach for...", "you don't often pick up [X], but..."), never as a third-person description of the reader's habits ("the reader typically reads...", "this reader tends toward...").
 11. AUTHOR VARIETY ACROSS REGIONS AND CULTURES: two related but independent defaults, both strictly secondary to the READER'S REQUEST and rule 8's recency guidance — never include a weaker match just to satisfy either half of this rule. First, a baseline habit: when nothing about the request specifically calls for one region, favor a mix of authorial backgrounds across the 5 rather than defaulting entirely to Western/Anglophone authors by default. Second, a personal signal: if the FULL LIBRARY block in TASTE CALIBRATION shows a genuine cluster of titles tied to one region, culture, or tradition (for example, several Indian mythology titles), treat that cluster exactly like the rest of TASTE CALIBRATION — optional secondary flavor you may draw on for one recommendation that reflects the same tradition, never a quota, never something that overrides the explicit request. If the request and recency already fill all 5 slots on their own merits, that is a complete, correct answer — neither half of this rule is a reason to swap out a better-fitting book.
 12. VOICE: write "why_it_fits" in second person, speaking directly to the reader ("you mentioned...", "since you loved...", "you'll recognise...") — never third person ("the reader...", "they...", "this reader's..."). This is a voice/phrasing rule only — it does not change what rule 6 requires you to cite, only how you address the reader while citing it. Applies with NO exception regardless of which mode produced the pick — normal, SURPRISE MODE (see rule 10's own restatement of this), or a rule-11 cluster pick. "description" and "resolution" are unaffected — write those as before.
+13. SIGNAL STRENGTH WITHIN TASTE CALIBRATION: the TASTE CALIBRATION block (item 3) now contains several tiers of signal, strongest to weakest — treat them accordingly, never as equals: (a) books rated "Rent-free in my head" or "Wrecked me" — strong favorites; (b) books rated "It was good while it lasted" — mild, neutral, enjoyed but explicitly NOT a favorite, do not treat like (a); (c) other finished books with no rating at all — a real but medium-strength positive signal, since the reader finished them without abandoning them, but weaker than an explicit rating; (d) books rated "Already forgot the plot" or marked abandoned/paused — negative signal, avoid recommending anything too similar to these; (e) currently reading or queued-up books — the weakest signal, a bare hint of current genre/topic interest only, never grounds for "why_it_fits" on their own (they are also already excluded from recommendation, being in the reader's library); (f) the full library list — weakest of all, pattern-spotting only (see rule 11). When citing TASTE CALIBRATION in "why_it_fits" per rule 6's fallback, prefer citing (a) or (c) over (b), (d), (e), or (f) whenever a genuine match exists in (a) or (c) — never cite a negative-signal book (d) as if it were a positive one.
 
 RESPONSE FORMAT — return this exact JSON structure:
 {
@@ -4672,6 +4673,36 @@ function _fnrBuildUserContext() {
   const pausedBooks = books.filter(b => b.status === 'Paused')
     .map(b => ({ title: b.title, category: b.category }));
 
+  // Books rated "Already forgot the plot" — an explicit negative signal
+  // (Round 3 of the FNR quality fixes — see
+  // /memories/repo/fnr-recommendation-quality.md), same weight class as
+  // pausedBooks above (the reader finished it, unlike a pause, but it left
+  // no impression at all).
+  const forgotBooks = books.filter(b => b.rating === 'forgot')
+    .map(b => ({ title: b.title, category: b.category }));
+
+  // Books rated "It was good while it lasted" — mild/neutral positive
+  // (Round 3): liked well enough to finish and rate, but deliberately NOT a
+  // favorite — kept out of topRatedBooks above so it can't be over-weighted.
+  const goodwhileBooks = books.filter(b => b.rating === 'goodwhile')
+    .map(b => ({ title: b.title, author: b.author || '', category: b.category }));
+
+  // Completed books with NO rating at all — a medium-strength favorite
+  // signal (Round 3), fully automatic with no new field/UI. This is what
+  // makes Quest Stage 3 "would reread without hesitating" books (added with
+  // status 'Completed' but never rated — see quest-feature.md Step 3) count
+  // as favorites, and also covers any older completed-but-unrated book
+  // already in the library.
+  const completedUnratedBooks = books
+    .filter(b => b.status === 'Completed' && !b.rating)
+    .map(b => ({ title: b.title, author: b.author || '', category: b.category }));
+
+  // Currently reading / queued books — a weak genre/topic-interest hint only
+  // (Round 3), never treated as a favorite claim since no verdict exists yet.
+  const readingQueuedBooks = books
+    .filter(b => b.status === 'Reading' || b.status === 'Queued Up')
+    .map(b => ({ title: b.title, author: b.author || '', category: b.category }));
+
   // Medium preference
   const medium = { kindle: 0, audiobook: 0, physical: 0 };
   books.forEach(b => { if (b.medium && medium[b.medium] !== undefined) medium[b.medium]++; });
@@ -4707,7 +4738,7 @@ function _fnrBuildUserContext() {
     .slice(0, FNR_LIBRARY_SAMPLE_CAP)
     .map(b => ({ title: b.title, author: b.author || '' }));
 
-  return { topRatedBooks, pausedBooks, medium, densityTop5, importedRatedBooks, librarySample };
+  return { topRatedBooks, pausedBooks, forgotBooks, goodwhileBooks, completedUnratedBooks, readingQueuedBooks, medium, densityTop5, importedRatedBooks, librarySample };
 }
 
 function _fnrSerializeContext(ctx) {
@@ -4725,13 +4756,26 @@ function _fnrSerializeContext(ctx) {
     lines.push('\nBOOKS RATED 4-5 STARS ON GOODREADS AT IMPORT (weaker signal than the reader\'s own ratings above — imported, not rated in this app):');
     ctx.importedRatedBooks.forEach(b => lines.push(`- "${b.title}"${b.author ? ` by ${b.author}` : ''}${b.category ? ` (${b.category})` : ''} — ${b.stars} stars`));
   }
-  if (ctx.pausedBooks.length) {
-    lines.push('\nBOOKS THEY ABANDONED (use as negative signal — avoid similar):');
-    ctx.pausedBooks.forEach(b => lines.push(`- "${b.title}" (${b.category})`));
+  if (ctx.goodwhileBooks.length) {
+    lines.push('\nBOOKS RATED "IT WAS GOOD WHILE IT LASTED" (mild, neutral — enjoyed enough to finish and rate, but NOT a favorite; do not over-weight these, and never treat them as strongly as the LOVED block above):');
+    ctx.goodwhileBooks.forEach(b => lines.push(`- "${b.title}"${b.author ? ` by ${b.author}` : ''}${b.category ? ` (${b.category})` : ''}`));
+  }
+  if (ctx.completedUnratedBooks.length) {
+    lines.push('\nOTHER FINISHED BOOKS, NO EXPLICIT RATING GIVEN (finished and never abandoned — likely enjoyed, though not explicitly rated; a medium-strength positive signal, weaker than the LOVED block above but stronger than the full library list below):');
+    ctx.completedUnratedBooks.forEach(b => lines.push(`- "${b.title}"${b.author ? ` by ${b.author}` : ''}${b.category ? ` (${b.category})` : ''}`));
+  }
+  if (ctx.pausedBooks.length || ctx.forgotBooks.length) {
+    lines.push('\nBOOKS THEY DIDN\'T CONNECT WITH (use as negative signal — avoid similar):');
+    ctx.pausedBooks.forEach(b => lines.push(`- "${b.title}" (${b.category}) — abandoned partway through`));
+    ctx.forgotBooks.forEach(b => lines.push(`- "${b.title}" (${b.category}) — finished, but already forgot the plot`));
   }
   if (ctx.densityTop5.length) {
     lines.push('\nBOOKS THAT ENGAGED THEM MOST (by number of highlights saved):');
     ctx.densityTop5.forEach(b => lines.push(`- "${b.title}"${b.author ? ` by ${b.author}` : ''} — ${b.count} highlights`));
+  }
+  if (ctx.readingQueuedBooks.length) {
+    lines.push('\nCURRENTLY READING OR QUEUED UP (no verdict yet — use only as a weak hint of current genre/topic interest, never as a favorite; also already excluded from recommendation, see EXCLUDE LIST):');
+    ctx.readingQueuedBooks.forEach(b => lines.push(`- "${b.title}"${b.author ? ` by ${b.author}` : ''}${b.category ? ` (${b.category})` : ''}`));
   }
   const total = ctx.medium.kindle + ctx.medium.audiobook + ctx.medium.physical;
   if (total > 0) {
